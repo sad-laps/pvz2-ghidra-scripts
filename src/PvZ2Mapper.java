@@ -16,13 +16,22 @@ import java.time.format.DateTimeFormatter;
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.QWordDataType;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Listing;
+import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.Symbol;
 
 public class PvZ2Mapper extends GhidraScript {
-  private int PTR_SIZE = 8;
-  private Path logPath = Paths.get("/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
+  private static int PTR_SIZE = 8;
+  private static Path LOG_PATH = Paths.get("/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
+  public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
+  public int i = 0;
+
 
   public void run() throws Exception {
     MemoryBlock block = currentProgram.getMemory().getBlock(".data.rel.ro");
@@ -36,12 +45,12 @@ public class PvZ2Mapper extends GhidraScript {
 
     // Analyse addresses
     // block.getSize() / PTR_SIZE
-    for (int i = 0; i < 10; i++) {
+    for (; i < 300; i++) {
       if (currAddr.compareTo(block.getEnd()) > 0) {
         log("Reached the end of the memory block early.");
         break;
       }
-      analyseVTableAddr(i, currAddr);
+      analyseVTableAddr(currAddr);
       currAddr = currAddr.add(PTR_SIZE);
     }
   }
@@ -49,27 +58,82 @@ public class PvZ2Mapper extends GhidraScript {
   /**
    * Helper method to analyse VTable addresses
    */
-  public void analyseVTableAddr(int i, Address addr) throws Exception {
-    log("Analyzing address [" + i + "] 0x" + addr);
+  public void analyseVTableAddr(Address addr) throws Exception {
+    Listing listing = currentProgram.getListing();
+    Memory mem = currentProgram.getMemory();
 
-    Data data = currentProgram.getListing().getDataAt(addr);
-    Reference[] refs = currentProgram.getReferenceManager().getReferencesFrom(addr);
-    long rawValue = currentProgram.getMemory().getLong(addr);
+    Data data = listing.getDataAt(addr);
+    if (data == null) return;
+
+    // Skip if the type is already a qword
+    if (data != null && data.getDataType() instanceof QWordDataType) return;
+
+    String typeName = (data != null) ? data.getDataType().getName() : "Unknown Type";
+
+    long rawValue = mem.getLong(addr);
     Address targetAddr = toAddr(rawValue);
+
+    // Check if address is in the binary memory block, if not make it a qword for cleaning the code
+    MemoryBlock targetBlock = null;
+    if (targetAddr != null && mem.contains(targetAddr)) {
+      targetBlock = mem.getBlock(targetAddr);
+    }
+    
+    // TODO: Will have to handle patterns such as non-0 byte paddings
+    // since some have `FFFFFFFFFFFFFDE0h` or `FFFFFFFFFFFFFFF8h` which can be metadata for vtables themselves ?
+    // there's also `0000000000001002h` or `0000000000001802h` under the .rodata symbol metadata for super classes?
+    if (targetBlock == null) {
+      changeDataType(addr, QWordDataType.dataType);
+      return;
+    }
+
+    Symbol targetSymbol = currentProgram.getSymbolTable().getPrimarySymbol(targetAddr);
+
+    // Check if address targets a symbol such as pointers or functions, if not make it a pointer
+    if (targetSymbol == null || typeName == "undefined") {
+      changeDataType(addr, UNDEFINED_POINTER_TYPE);
+      targetSymbol = currentProgram.getSymbolTable().getPrimarySymbol(targetAddr);
+    }
+
+    data = listing.getDataAt(addr);
+    typeName = (data != null) ? data.getDataType().getName() : "Unknown Type";
+    String targetName = (targetSymbol != null) ? targetSymbol.getName() : "Unlabeled Function/Data";
+
+    log("[" + i + "] Analysing Address: 0x" + addr + " | Type: " + typeName + " | Label: " + data.getLabel() + " | Target Symbol: " + targetName);
+
+    // Reference[] refs = currentProgram.getReferenceManager().getReferencesFrom(addr);
   }
 
   /**
-   * Helper method to write text in Ghidra Console and log file
+   * Helper methods to change data type of an address, returns error if it couldn't change it
+   */
+  public void changeDataType(Address addr, DataType newType) {
+    Listing listing = currentProgram.getListing();
+
+    try {
+      listing.clearCodeUnits(addr, addr.add(PTR_SIZE - 1), false);
+      listing.createData(addr, newType);
+      log("[" + i + "] Changed Address: 0x" + addr + " to Type: " + newType.getName());
+    }
+    catch (Exception e) {
+      log("  -> [Error] Could not create " + newType.getName() + " at 0x" + addr + ": " + e.getMessage());
+    }
+
+    return;
+  }
+
+  /**
+   * Helper methods to write text in Ghidra Console and in a log file
    */
   public void log(String message, boolean inConsole) {
     if (inConsole) println(message);
 
     // Write to log file
     try {
-      if (logPath.getParent() != null) {
-        Files.createDirectories(logPath.getParent());
+      if (LOG_PATH.getParent() != null) {
+        Files.createDirectories(LOG_PATH.getParent());
       }
-      Files.writeString(logPath, message + System.lineSeparator(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+      Files.writeString(LOG_PATH, message + System.lineSeparator(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
     catch (IOException e) {
       printerr("Failed to write to log file: " + e.getMessage());

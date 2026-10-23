@@ -23,9 +23,9 @@ public class ScriptLogger {
   }
 
   public static void logHeader(String header) {
-    log("\n============================================", false);
-    log("| " + header + " Log from " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + " |", false);
-    log("============================================\n", false);
+    log("╔══════════════════════════════════════════╗", false);
+    log("║ " + header + " Log from " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + " ║", false);
+    log("╚══════════════════════════════════════════╝\n", false);
   }
 
   public static void log(String message, boolean inConsole) {

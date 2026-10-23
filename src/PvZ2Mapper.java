@@ -11,8 +11,6 @@ import static com.sad.pvz2.ScriptLogger.*;
 
 import java.util.List;
 
-import javax.help.Map.ID;
-
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.ArrayDataType;
@@ -24,14 +22,10 @@ import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.LongLongDataType;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.PointerTypedef;
-import ghidra.program.model.data.QWordDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.UnsignedIntegerDataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Listing;
-import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryAccessException;
-import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.symbol.ReferenceManager;
@@ -77,8 +71,6 @@ public class PvZ2Mapper extends GhidraScript {
 
     // Analyze te
     analyzeRTTI();
-
-    log("\n============================================\n", false);
   }
 
   /**
@@ -124,7 +116,6 @@ public class PvZ2Mapper extends GhidraScript {
 
     log(" * Initialized Itanium C++ ABI structures.");
   }
-
 
   /**
    * Analyze the Itanium ABI symbols in the binary and use references to map VTables

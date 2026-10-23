@@ -4,6 +4,12 @@ Here I will note all the knowledge gained when Reverse Engineering the libPVZ2.s
 
 > ⚠️ IMPORTANT: Currently the version is 13.5.1 AArch64 (64-bit) at time of this document, so the information might differ on other version of the game!
 
+## Library Information
+
+The .so is compiled from C++ so most of the conventions, structure, ABI is from there!
+
+The type system uses the [Itanium C++ ABI](https://itanium-cxx-abi.github.io/cxx-abi/abi.html).
+
 ## .so Structure Info
 
 The program sectors in the .so contain the following data:

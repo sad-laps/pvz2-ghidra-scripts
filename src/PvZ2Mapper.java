@@ -6,40 +6,42 @@
 //@toolbar
 //@runtime Java
 
-import com.sad.pvz2.ScriptLogger;
 import static com.sad.pvz2.ScriptLogger.*;
 
+import com.sad.pvz2.ScriptLogger;
+import com.sad.pvz2.util.ItaniumUtil;
+import com.sad.pvz2.util.ItaniumUtil.ClassNameInfo;
+
+import java.util.Iterator;
 import java.util.List;
 
+import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.data.ArrayDataType;
-import ghidra.program.model.data.CategoryPath;
-import ghidra.program.model.data.CharDataType;
-import ghidra.program.model.data.DataType;
-import ghidra.program.model.data.DataTypeConflictHandler;
-import ghidra.program.model.data.DataTypeManager;
-import ghidra.program.model.data.LongLongDataType;
-import ghidra.program.model.data.PointerDataType;
-import ghidra.program.model.data.PointerTypedef;
-import ghidra.program.model.data.StructureDataType;
-import ghidra.program.model.data.UnsignedIntegerDataType;
-import ghidra.program.model.listing.Data;
-import ghidra.program.model.listing.Listing;
-import ghidra.program.model.symbol.Reference;
-import ghidra.program.model.symbol.ReferenceIterator;
-import ghidra.program.model.symbol.ReferenceManager;
-import ghidra.program.model.symbol.Symbol;
-import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.data.*;
+import ghidra.program.model.listing.*;
+import ghidra.program.model.mem.Memory;
+import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.HighFunctionDBUtil;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.PcodeOpAST;
+import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.symbol.*;
+import ghidra.util.exception.InvalidInputException;
 
 public class PvZ2Mapper extends GhidraScript {
   public static int PTR_SIZE = 8;
   public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
 
+  public static DecompInterface decomp = new DecompInterface();
+  public static Program program;
   public static DataTypeManager dtm;
   public static SymbolTable sytab;
   public static ReferenceManager refman;
   public static Listing listing;
+  public static Memory mem;
   public static CategoryPath pvz2Category;
 
   // Itanium C++ ABI Data Types
@@ -57,10 +59,14 @@ public class PvZ2Mapper extends GhidraScript {
 
   public void run() {
     ScriptLogger.init(this, "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
+    program = currentProgram;
     dtm = currentProgram.getDataTypeManager();
     sytab = currentProgram.getSymbolTable();
     refman = currentProgram.getReferenceManager();
     listing = currentProgram.getListing();
+    mem = currentProgram.getMemory();
+
+    decomp.openProgram(currentProgram);
 
     logHeader("PvZ2 Mapper");
 
@@ -135,7 +141,7 @@ public class PvZ2Mapper extends GhidraScript {
       case "_ZTVN10__cxxabiv117__class_type_infoE":
         changeDataType(sym.getAddress(), new PointerDataType(classTypeInfo));
         log("--- Analyzing Base Classes VTables ---");
-        while (refs.hasNext()) analyzeBaseVTableRTTI(refs.next().getFromAddress());
+        while (refs.hasNext()) analyzeBaseClassRTTI(refs.next().getFromAddress());
         break;
       case "_ZTVN10__cxxabiv120__si_class_type_infoE":
         changeDataType(sym.getAddress(), new PointerDataType(siClassTypeInfo));
@@ -154,15 +160,28 @@ public class PvZ2Mapper extends GhidraScript {
 
   // TODO: REMOVE THIS AFTER TESTING
   public static int ID = 0;
-  public static void analyzeBaseVTableRTTI(Address typeInfoAddr) {
+  public static void analyzeBaseClassRTTI(Address typeInfoAddr) {
     ID++; if (ID > 1) return;
-    Data data = listing.getDataAt(typeInfoAddr);
-    String typeName = (data != null) ? data.getDataType().getName() : "Unknown Type";
-    String className = "";
-    log("Analyzing Base Class " + className + " from 0x" + typeInfoAddr + " | Type: " + typeName);
+    log("Analyzing Base Class at 0x" + typeInfoAddr);
     
-    // TODO: Check if it's actually the type name and use it
-    changeDataType(typeInfoAddr.add(PTR_SIZE), new PointerDataType(DataType.DEFAULT));
+    changeDataType(typeInfoAddr, classTypeInfo);
+
+    Data typeInfoData = listing.getDataAt(typeInfoAddr);
+
+    // Get the reference from the `__type_name` inside the `type_info` inside the `__class_type_info`
+    Data namePtrData = listing.getDataAt((Address) typeInfoData.getComponent(0).getComponent(1).getValue());
+    ClassNameInfo className = ItaniumUtil.demangleItaniumString(getStringFromData(namePtrData));
+    log(" * Found Base Class name \"" + className.getFullName() + '"');
+
+    setLabel(typeInfoAddr, className.getFullName() + "::type_info");
+    
+    Address rttiPtr = findRTTIPointer(typeInfoAddr);
+    changeDataType(rttiPtr, UNDEFINED_POINTER_TYPE);
+    
+    Address vtablePtr = rttiPtr.add(PTR_SIZE);
+
+    long vtableSize = typeInfoAddr.subtract(vtablePtr);
+    analyzeVTable(vtablePtr, className, vtableSize);
   }
 
   public static void analyzeSIVTableRTTI(Reference ref) {
@@ -170,19 +189,139 @@ public class PvZ2Mapper extends GhidraScript {
     log("Analyzing Single Inheritance Class from 0x" + ref.getFromAddress());
   }
 
+  public static void analyzeVTable(Address addr, ClassNameInfo className, long size) {
+    log(" * Found Base Class " + className.getFullName() + " VTable at" + addr);
 
-  public void createClassStructures(String rawClassName, Address sourceAddr) {
-    String className = rawClassName.replaceAll("^\\d+", "");
+    StructureDataType vtableType = generateVTableStruct(className, size);
+    changeDataType(addr, vtableType);
+    setLabel(addr, className.getFullName() + "VTable");
     
+    StructureDataType classType = generateClassStruct(className, vtableType);
 
-    // StructureDataType objStruct = new StructureDataType(pvz2Category, className, 0);
-    // objStruct.add(new PointerDataType(DataType.DEFAULT), 8, "vtable", "");
+    // Iterate through the components (function pointers) of the VTable and analyze them
+    if (size == 0) return;
+    Data vtableData = listing.getDataAt(addr);
 
-    // StructureDataType vtableStruct = new StructureDataType(categoryPath, className + "VTable", 0);
-    
-    // dtm.addDataType(objStruct, DataTypeConflictHandler.REPLACE_HANDLER);
-    // dtm.addDataType(vtableStruct, DataTypeConflictHandler.REPLACE_HANDLER);
-    // log(" * Created Namespace & Structures under " + categoryPath.getPath());
+    int numPointers = (int) (size / PTR_SIZE);
+    for (int i = 0; i < numPointers; i++) {
+      Data component = vtableData.getComponent(i);
+      if (component == null) continue;
+
+      Object val = component.getValue();
+      if (val instanceof Address funcAddr) analyzeVTableFunction(i, funcAddr, classType, className);
+    }
+  }
+
+  public static void analyzeVTableFunction(int i, Address funcAddr, StructureDataType classType, ClassNameInfo className) {
+    Function func = listing.getFunctionAt(funcAddr);
+    if (func == null) return;
+    try {
+      func.setName(className.getFullName() + "::func" + i, SourceType.USER_DEFINED);
+    }
+    catch (Exception e) {
+      error("Could not update function at 0x" + funcAddr, e);
+    }
+
+    String funcName = func.getName();
+
+    DecompileResults res = decomp.decompileFunction(func, 30, null);
+    try {
+      // Sets the parameters and return type correctly
+      if (!res.decompileCompleted()) return;
+      HighFunction highFunc = res.getHighFunction();
+      if (highFunc == null) return;
+      HighFunctionDBUtil.commitParamsToDatabase(highFunc, true, HighFunctionDBUtil.ReturnCommitOption.COMMIT, SourceType.USER_DEFINED);
+
+      // Set the first parameter name to `self` as it's always a pointer to the Object itself
+      func.getParameter(0).setName("self", SourceType.USER_DEFINED);
+      func.getParameter(0).setDataType(new PointerDataType(classType), SourceType.USER_DEFINED);
+
+      // Try check for destroyer function to set the real class struct size
+      long detectedSize = extractClassSizeFromPcode(highFunc);
+      if (detectedSize > 0 && classType.getLength() < detectedSize) {
+        log("  * Detected class size 0x" + Long.toHexString(detectedSize) + " for " + className.name() + " from function " + i);
+        classType.setLength((int) detectedSize);
+        dtm.addDataType(classType, DataTypeConflictHandler.REPLACE_HANDLER);
+      }
+    }
+    catch (Exception e) {
+      error("Could not update function at 0x" + funcAddr, e);
+    }
+    log(" * [" + i + "] Mapped function at 0x" + funcAddr + " -> Name: " + funcName);
+  }
+
+  public static long extractClassSizeFromPcode(HighFunction highFunc) {
+    Varnode selfVarnode = new Varnode(highFunc.getFunction().getParameter(0).getMinAddress(), highFunc.getFunction().getParameter(0).getLength());
+
+    Iterator<PcodeOpAST> ops = highFunc.getPcodeOps();
+    while (ops.hasNext()) {
+      PcodeOp op = ops.next();
+
+      if (op.getOpcode() != PcodeOp.CALL) continue;
+      if (op.getNumInputs() < 3) continue;
+      
+      Varnode target = op.getInput(0);
+      if (target == null || target.getAddress() == null) continue;
+
+      Function calledFunc = listing.getFunctionAt(target.getAddress());
+      if (calledFunc == null) continue;
+
+      if (!calledFunc.getName().contains("delete")) continue;
+      
+      Varnode ptrArg = op.getInput(1);
+      if (ptrArg == null) continue;
+
+      boolean isDeletingSelf = ptrArg.getOffset() == selfVarnode.getOffset();
+      if (!isDeletingSelf) continue;
+
+      Varnode sizeArg = op.getInput(2);
+      if (sizeArg == null) continue;
+
+      long val = sizeArg.getOffset();
+      if (val >= 8 && val <= 4096 && (val % 4 == 0)) return val;
+    }
+    return -1;
+  }
+
+  public static StructureDataType generateVTableStruct(ClassNameInfo className, long size) {
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(pvz2Category), className.name() + "VTable", 0);
+
+    // TODO: Will have to handle this differently, I could use the types given from the functions when I analyze them better, so do this after analyzing the functions best!
+    int numPointers = (int) (size / PTR_SIZE);
+    for (int i = 0; i < numPointers; i++) {
+      struct.add(UNDEFINED_POINTER_TYPE, PTR_SIZE, "func_" + i, "");
+    }
+
+    dtm.addDataType(struct, DataTypeConflictHandler.DEFAULT_HANDLER);
+    return struct;
+  }
+
+  public static StructureDataType generateClassStruct(ClassNameInfo className, StructureDataType vtableType) {
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(pvz2Category), className.name(), 0);
+
+    // TODO: Will have to handle this differently, I could use the set parameters in the destroy functions or super classes when I analyze them better, so do this after analyzing the functions best?
+    struct.add(new PointerDataType(vtableType), PTR_SIZE, "vtable", "");
+
+    dtm.addDataType(struct, DataTypeConflictHandler.DEFAULT_HANDLER);
+    return struct;
+  }
+
+  public static Address findRTTIPointer(Address typeInfoAddr) {
+    long targetValue = typeInfoAddr.getOffset();
+    Address curr = typeInfoAddr.subtract(PTR_SIZE);
+
+    for (int i = 0; i < 64; i++) {
+      try {
+        long val = mem.getLong(curr);
+        if (val == targetValue) {
+          return curr; // Found 02f7d570!
+        }
+      } catch (MemoryAccessException e) {
+        break;
+      }
+      curr = curr.subtract(PTR_SIZE);
+    }
+    return null;
   }
 
   @FunctionalInterface
@@ -222,16 +361,13 @@ public class PvZ2Mapper extends GhidraScript {
     return struct;
   }
 
-  public String getStringFromType(Address addr) {
-    Listing listing = currentProgram.getListing();
-    Data data = listing.getDataAt(addr);
-
+  public static String getStringFromData(Data data) {
     try {
       if (data != null && data.getValue() instanceof String str)
         return str;
     }
     catch (Exception e) {
-      error("Could not read string at 0x" + addr + ": ", e);
+      error("Could not read string at 0x" + data.getAddress() + ": ", e);
     }
     return "";
   }
@@ -248,12 +384,24 @@ public class PvZ2Mapper extends GhidraScript {
     }
     
     try {
-      listing.clearCodeUnits(addr, addr.add(PTR_SIZE - 1), false);
+      int length = newType.getLength();
+      if (length > 0) {
+        listing.clearCodeUnits(addr, addr.add(length - 1), false);
+      }
       listing.createData(addr, newType);
-      log(" * Changed address 0x" + addr + " to Type: " + newType.getName());
+      log(" > Changed address 0x" + addr + " to Type: " + newType.getName());
     }
     catch (Exception e) {
-      error("Could not create " + newType.getName() + " at 0x" + addr + ": ", e);
+      error("Could not change type to " + newType.getName() + " at 0x" + addr + ": ", e);
+    }
+  }
+
+  public static void setLabel(Address addr, String name) {
+    try {
+      sytab.createLabel(addr, name, SourceType.USER_DEFINED);
+    }
+    catch (InvalidInputException e) {
+      error("Could not create label '" + name + "' at 0x" + addr, e);
     }
   }
 }

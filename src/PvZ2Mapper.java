@@ -11,6 +11,7 @@ import static com.sad.pvz2.ScriptLogger.*;
 import com.sad.pvz2.ScriptLogger;
 import com.sad.pvz2.util.ItaniumUtil;
 import com.sad.pvz2.util.ItaniumUtil.ClassNameInfo;
+import com.sad.pvz2.util.StructUtil;
 
 import java.util.Iterator;
 import java.util.List;
@@ -87,22 +88,22 @@ public class PvZ2Mapper extends GhidraScript {
 
     PointerTypedef offsetRttiPtr = new PointerTypedef("pointer_offset+0x10", UNDEFINED_POINTER_TYPE, 8, dtm, 16);
     // std::type_info (Type Info)
-    typeInfo = getOrCreateStructure(rttiPath, "type_info", b -> {
+    typeInfo = StructUtil.getOrCreateStructure(dtm, rttiPath, "type_info", b -> {
       b.add(offsetRttiPtr, 8, "__vptr_type_info", "");
       b.add(new PointerDataType(CharDataType.dataType), 8, "__type_name", "");
     });
 
     // __class_type_info (Class Type Info)
-    classTypeInfo = getOrCreateStructure(rttiPath, "__class_type_info", b -> b.add(typeInfo, typeInfo.getLength(), "type_info", ""));
+    classTypeInfo = StructUtil.getOrCreateStructure(dtm, rttiPath, "__class_type_info", b -> b.add(typeInfo, typeInfo.getLength(), "type_info", ""));
 
     // __si_class_type_info (Single Inheritance Class Type Info)
-    siClassTypeInfo = getOrCreateStructure(rttiPath, "__si_class_type_info", b -> {
+    siClassTypeInfo = StructUtil.getOrCreateStructure(dtm, rttiPath, "__si_class_type_info", b -> {
       b.add(typeInfo, typeInfo.getLength(), "type_info", "");
       b.add(new PointerDataType(classTypeInfo), 8, "__base_type", "");
     });
 
     // __base_class_type_info (Base Class Type Info (for vmi))
-    baseClassTypeInfo = getOrCreateStructure(rttiPath, "__base_class_type_info", b -> {
+    baseClassTypeInfo = StructUtil.getOrCreateStructure(dtm, rttiPath, "__base_class_type_info", b -> {
       b.add(new PointerDataType(classTypeInfo), 8, "__base_type", "");
       // baseClassTypeInfo.add(LongDataType.dataType, 8, "__offset_flags", "");
       // Use `longlong` because Ghidra forces the `long` bitfields to 0x4 size in scripts bruh
@@ -113,7 +114,7 @@ public class PvZ2Mapper extends GhidraScript {
 
     // TODO: Will have to create for each base dynamically  when needed later on!!
     // __vmi_class_type_info (Virtual and Multiple Inheritance Class Type Info)
-    vmiClassTypeInfo = getOrCreateStructure(rttiPath, "__vmi_class_type_info", b -> {
+    vmiClassTypeInfo = StructUtil.getOrCreateStructure(dtm, rttiPath, "__vmi_class_type_info", b -> {
       b.add(typeInfo, typeInfo.getLength(), "type_info", "");
       b.add(UnsignedIntegerDataType.dataType, 4, "__flags", "");
       b.add(UnsignedIntegerDataType.dataType, 4, "__base_count", "");
@@ -177,8 +178,14 @@ public class PvZ2Mapper extends GhidraScript {
     
     Address rttiPtr = findRTTIPointer(typeInfoAddr);
     changeDataType(rttiPtr, UNDEFINED_POINTER_TYPE);
-    
+
     Address vtablePtr = rttiPtr.add(PTR_SIZE);
+    // TODO: Check if this is caused by inheritance and don't warn if so
+    Boolean isAddress = listing.getDataAt(vtablePtr).getValue() instanceof Address;
+    if (!isAddress) { //vtablePtr.equals(typeInfoAddr)
+      warn("VTable doesn't reference a valid address!");
+      return;
+    }
 
     long vtableSize = typeInfoAddr.subtract(vtablePtr);
     analyzeVTable(vtablePtr, className, vtableSize);
@@ -190,7 +197,7 @@ public class PvZ2Mapper extends GhidraScript {
   }
 
   public static void analyzeVTable(Address addr, ClassNameInfo className, long size) {
-    log(" * Found Base Class " + className.getFullName() + " VTable at" + addr);
+    log(" * Found Base Class " + className.getFullName() + " VTable at " + addr);
 
     StructureDataType vtableType = generateVTableStruct(className, size);
     changeDataType(addr, vtableType);
@@ -240,8 +247,7 @@ public class PvZ2Mapper extends GhidraScript {
       long detectedSize = extractClassSizeFromPcode(highFunc);
       if (detectedSize > 0 && classType.getLength() < detectedSize) {
         log("  * Detected class size 0x" + Long.toHexString(detectedSize) + " for " + className.name() + " from function " + i);
-        classType.setLength((int) detectedSize);
-        dtm.addDataType(classType, DataTypeConflictHandler.REPLACE_HANDLER);
+        StructUtil.resize(dtm, classType, (int) detectedSize);
       }
     }
     catch (Exception e) {
@@ -324,41 +330,19 @@ public class PvZ2Mapper extends GhidraScript {
     return null;
   }
 
-  @FunctionalInterface
-  public interface StructBuilder {
-    void accept(StructureDataType struct) throws Exception;
-  }
-
   /**
    * Helper method to create VMI Class Type Info structures with varying sizes
    */
   public StructureDataType getOrCreateVMIStructure(CategoryPath path, int size) {
     if (size == 1) return vmiClassTypeInfo; // vmiClassTypeInfo is already single base
 
-    StructureDataType vmiStruct = getOrCreateStructure(path, "__vmi_class_type_info_" + size + "bases", b -> {
+    StructureDataType vmiStruct = StructUtil.getOrCreateStructure(dtm, path, "__vmi_class_type_info_" + size + "bases", b -> {
       b.add(typeInfo, typeInfo.getLength(), "type_info", "");
       b.add(UnsignedIntegerDataType.dataType, 4, "__flags", "");      
       b.add(UnsignedIntegerDataType.dataType, 4, "__base_count", "");
       b.add(new ArrayDataType(baseClassTypeInfo, size, baseClassTypeInfo.getLength()), "__base_info", "");
     });
     return vmiStruct;
-  }
-
-  public static StructureDataType getOrCreateStructure(CategoryPath path, String name, StructBuilder builder) {
-    DataType existing = dtm.getDataType(path, name);
-
-    if (existing instanceof StructureDataType dataType)
-      return dataType;
-
-    StructureDataType struct = new StructureDataType(path, name, 0);
-    try {
-      builder.accept(struct);
-    }
-    catch (Exception e) {
-      error("Failed to build structure: " + name, e);
-    }
-    dtm.addDataType(struct, DataTypeConflictHandler.DEFAULT_HANDLER);
-    return struct;
   }
 
   public static String getStringFromData(Data data) {

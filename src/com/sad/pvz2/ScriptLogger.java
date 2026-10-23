@@ -37,6 +37,11 @@ public class ScriptLogger {
     log(message, true);
   }
 
+  public static void warn(String message) {
+    SCRIPT.printerr(message);
+    writeLogFile("[WARN] " + message + System.lineSeparator());
+  }
+
   public static void error(String message, Exception err) {
     SCRIPT.printerr(message + err.getMessage());
     writeLogFile("[ERROR] " + message + System.lineSeparator() + err.getMessage() + System.lineSeparator());

@@ -8,7 +8,7 @@
 
 import static com.sad.pvz2.ScriptLogger.*;
 
-import com.sad.pvz2.ScriptLogger;
+import com.sad.pvz2.PvZ2BaseScript;
 import com.sad.pvz2.util.ItaniumUtil;
 import com.sad.pvz2.util.ItaniumUtil.ClassNameInfo;
 import com.sad.pvz2.util.StructUtil;
@@ -16,35 +16,16 @@ import com.sad.pvz2.util.StructUtil;
 import java.util.Iterator;
 import java.util.List;
 
-import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
-import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
-import ghidra.program.model.pcode.HighFunction;
-import ghidra.program.model.pcode.HighFunctionDBUtil;
-import ghidra.program.model.pcode.PcodeOp;
-import ghidra.program.model.pcode.PcodeOpAST;
-import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.pcode.*;
 import ghidra.program.model.symbol.*;
 import ghidra.util.exception.InvalidInputException;
 
-public class PvZ2Mapper extends GhidraScript {
-  public static int PTR_SIZE = 8;
-  public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
-
-  public static DecompInterface decomp = new DecompInterface();
-  public static Program program;
-  public static DataTypeManager dtm;
-  public static SymbolTable sytab;
-  public static ReferenceManager refman;
-  public static Listing listing;
-  public static Memory mem;
-  public static CategoryPath pvz2Category;
-
+public class PvZ2Mapper extends PvZ2BaseScript {
   // Itanium C++ ABI Data Types
   public static StructureDataType typeInfo;
   public static StructureDataType classTypeInfo;
@@ -59,22 +40,11 @@ public class PvZ2Mapper extends GhidraScript {
   };
 
   public void run() {
-    ScriptLogger.init(this, "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
-    program = currentProgram;
-    dtm = currentProgram.getDataTypeManager();
-    sytab = currentProgram.getSymbolTable();
-    refman = currentProgram.getReferenceManager();
-    listing = currentProgram.getListing();
-    mem = currentProgram.getMemory();
-
-    decomp.openProgram(currentProgram);
-
-    logHeader("PvZ2 Mapper");
+    init("1.0.0", "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
+    logHeader("PvZ2 Mapper", VERSION);
 
     // Create the Itanium C++ ABI structures beforehand
     initItaniumABIStructures();
-
-    pvz2Category = new CategoryPath("/_PvZ2Classes");
 
     // Analyze te
     analyzeRTTI();
@@ -83,8 +53,11 @@ public class PvZ2Mapper extends GhidraScript {
   /**
    * Creates the Itanium C++ ABI structures.
    */
+  public static Boolean initializedItanium = false;
   public static void initItaniumABIStructures() {
     CategoryPath rttiPath = new CategoryPath("/_ItaniumABI");
+
+    if (dtm.getDataType(rttiPath, "type_info") == null) initializedItanium = false;
 
     PointerTypedef offsetRttiPtr = new PointerTypedef("pointer_offset+0x10", UNDEFINED_POINTER_TYPE, 8, dtm, 16);
     // std::type_info (Type Info)
@@ -121,7 +94,8 @@ public class PvZ2Mapper extends GhidraScript {
       b.add(new ArrayDataType(baseClassTypeInfo, 1, baseClassTypeInfo.getLength()), "__base_info", "");
     });
 
-    log(" * Initialized Itanium C++ ABI structures.");
+    if (!initializedItanium) log(" * Initialized Itanium C++ ABI structures.");
+    initializedItanium = true;
   }
 
   /**
@@ -141,17 +115,23 @@ public class PvZ2Mapper extends GhidraScript {
     switch (sym.getName()) {
       case "_ZTVN10__cxxabiv117__class_type_infoE":
         changeDataType(sym.getAddress(), new PointerDataType(classTypeInfo));
-        log("--- Analyzing Base Classes VTables ---");
+        divider();
+        log("[INFO] Analyzing Base Classes VTables");
+        divider();
         while (refs.hasNext()) analyzeBaseClassRTTI(refs.next().getFromAddress());
         break;
       case "_ZTVN10__cxxabiv120__si_class_type_infoE":
         changeDataType(sym.getAddress(), new PointerDataType(siClassTypeInfo));
-        log("--- Analyzing Single Inheritance Classes VTables ---");
+        divider();
+        log("[INFO] Analyzing Single Inheritance Classes VTables");
+        divider();
         while (refs.hasNext()) analyzeSIVTableRTTI(refs.next());
         break;
       case "_ZTVN10__cxxabiv121__vmi_class_type_infoE":
         changeDataType(sym.getAddress(), new PointerDataType(vmiClassTypeInfo));
-        log("--- Analyzing Virtual Multiple Inheritance Classes VTables ---");
+        divider();
+        log("[INFO] Analyzing Virtual Multiple Inheritance Classes VTables");
+        divider();
         break;
       default:
         break;
@@ -163,8 +143,8 @@ public class PvZ2Mapper extends GhidraScript {
   public static int ID = 0;
   public static void analyzeBaseClassRTTI(Address typeInfoAddr) {
     ID++; if (ID > 1) return;
-    log("Analyzing Base Class at 0x" + typeInfoAddr);
-    
+    log(" > Analyzing Base Class at 0x" + typeInfoAddr);
+
     changeDataType(typeInfoAddr, classTypeInfo);
 
     Data typeInfoData = listing.getDataAt(typeInfoAddr);
@@ -172,11 +152,13 @@ public class PvZ2Mapper extends GhidraScript {
     // Get the reference from the `__type_name` inside the `type_info` inside the `__class_type_info`
     Data namePtrData = listing.getDataAt((Address) typeInfoData.getComponent(0).getComponent(1).getValue());
     ClassNameInfo className = ItaniumUtil.demangleItaniumString(getStringFromData(namePtrData));
-    log(" * Found Base Class name \"" + className.getFullName() + '"');
+    log("  * Class Name       : \"" + className.getFullName() + '"');
+    if (className.getFullName().contains("$_")) return;
 
     setLabel(typeInfoAddr, className.getFullName() + "::type_info");
     
     Address rttiPtr = findRTTIPointer(typeInfoAddr);
+    //if (rttiPtr == null) return; // TODO: Try fix this somehow since for some reason some type infos dont find the pointer?
     changeDataType(rttiPtr, UNDEFINED_POINTER_TYPE);
 
     Address vtablePtr = rttiPtr.add(PTR_SIZE);
@@ -197,18 +179,19 @@ public class PvZ2Mapper extends GhidraScript {
   }
 
   public static void analyzeVTable(Address addr, ClassNameInfo className, long size) {
-    log(" * Found Base Class " + className.getFullName() + " VTable at " + addr);
-
+    log("  * VTable Address   : " + addr);
+    
     StructureDataType vtableType = generateVTableStruct(className, size);
     changeDataType(addr, vtableType);
     setLabel(addr, className.getFullName() + "VTable");
     
     StructureDataType classType = generateClassStruct(className, vtableType);
-
+    
     // Iterate through the components (function pointers) of the VTable and analyze them
     if (size == 0) return;
     Data vtableData = listing.getDataAt(addr);
-
+    
+    log("  * Mapped Functions :");
     int numPointers = (int) (size / PTR_SIZE);
     for (int i = 0; i < numPointers; i++) {
       Data component = vtableData.getComponent(i);
@@ -246,14 +229,14 @@ public class PvZ2Mapper extends GhidraScript {
       // Try check for destroyer function to set the real class struct size
       long detectedSize = extractClassSizeFromPcode(highFunc);
       if (detectedSize > 0 && classType.getLength() < detectedSize) {
-        log("  * Detected class size 0x" + Long.toHexString(detectedSize) + " for " + className.name() + " from function " + i);
+        log("   + Detected Size   : " + detectedSize + " bytes (0x" + Long.toHexString(detectedSize) + ")");
         StructUtil.resize(dtm, classType, (int) detectedSize);
       }
     }
     catch (Exception e) {
       error("Could not update function at 0x" + funcAddr, e);
     }
-    log(" * [" + i + "] Mapped function at 0x" + funcAddr + " -> Name: " + funcName);
+    log("  [" + i + "] 0x" + funcAddr + " -> " + funcName);
   }
 
   public static long extractClassSizeFromPcode(HighFunction highFunc) {
@@ -290,7 +273,7 @@ public class PvZ2Mapper extends GhidraScript {
   }
 
   public static StructureDataType generateVTableStruct(ClassNameInfo className, long size) {
-    StructureDataType struct = new StructureDataType(className.toCategoryPath(pvz2Category), className.name() + "VTable", 0);
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name() + "VTable", 0);
 
     // TODO: Will have to handle this differently, I could use the types given from the functions when I analyze them better, so do this after analyzing the functions best!
     int numPointers = (int) (size / PTR_SIZE);
@@ -303,7 +286,7 @@ public class PvZ2Mapper extends GhidraScript {
   }
 
   public static StructureDataType generateClassStruct(ClassNameInfo className, StructureDataType vtableType) {
-    StructureDataType struct = new StructureDataType(className.toCategoryPath(pvz2Category), className.name(), 0);
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name(), 0);
 
     // TODO: Will have to handle this differently, I could use the set parameters in the destroy functions or super classes when I analyze them better, so do this after analyzing the functions best?
     struct.add(new PointerDataType(vtableType), PTR_SIZE, "vtable", "");
@@ -373,7 +356,7 @@ public class PvZ2Mapper extends GhidraScript {
         listing.clearCodeUnits(addr, addr.add(length - 1), false);
       }
       listing.createData(addr, newType);
-      log(" > Changed address 0x" + addr + " to Type: " + newType.getName());
+      log("  [0x" + addr + "] Type assigned >> " + newType.getName());
     }
     catch (Exception e) {
       error("Could not change type to " + newType.getName() + " at 0x" + addr + ": ", e);

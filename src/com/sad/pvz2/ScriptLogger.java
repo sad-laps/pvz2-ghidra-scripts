@@ -22,10 +22,15 @@ public class ScriptLogger {
     ScriptLogger.LOG_FILE_PATH = Paths.get(filePath, fileName);
   }
 
-  public static void logHeader(String header) {
-    log("╔══════════════════════════════════════════╗", false);
-    log("║ " + header + " Log from " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + " ║", false);
-    log("╚══════════════════════════════════════════╝\n", false);
+  public static void logHeader(String header, String version) {
+    log("╔══════════════════════════════════════════════════════════╗", false);
+    log("║                " + header  + " Log v" + version + "                    ║", false);
+    log("║               Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + "             ║", false);
+    log("╚══════════════════════════════════════════════════════════╝", false);
+  }
+
+  public static void divider() {
+    log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", false);
   }
 
   public static void log(String message, boolean inConsole) {

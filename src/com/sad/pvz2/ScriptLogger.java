@@ -11,23 +11,36 @@ import java.time.format.DateTimeFormatter;
 public class ScriptLogger {
   public static Path LOG_FILE_PATH;
   public static PvZ2BaseScript SCRIPT;
+  public static int WIDTH = 56;
 
   public static void init(PvZ2BaseScript script, String filePath, String fileName) {
     ScriptLogger.SCRIPT = script;
     ScriptLogger.LOG_FILE_PATH = Paths.get(filePath, fileName);
   }
 
-  public static void logHeader(String header, String version, String gameVersion) {
-    // TODO: Make this better one day so it spaces out dynamically with the string size
-    log("╔══════════════════════════════════════════════════════════╗", false);
-    log("║                " + header  + " Log v" + version + "                   ║", false);
-    log("║                  Game Version: " + gameVersion + "                    ║", false);
-    log("║               Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + "             ║", false);
-    log("╚══════════════════════════════════════════════════════════╝", false);
+  public static void logHeader(String scriptName, String version, String gameVersion) {
+    String scriptLine = scriptName + " Log v" + version;
+    String gameLine = "Game Version: " + gameVersion;
+    String timestamp = "Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now());
+
+    log("╔" + "═".repeat(WIDTH)             + "╗", false);
+    log("║" + centerText(scriptLine) + "║", false);
+    log("║" + centerText(gameLine)   + "║", false);
+    log("║" + centerText(timestamp)  + "║", false);
+    log("╚" + "═".repeat(WIDTH)             + "╝", false);
+  }
+
+  private static String centerText(String text) {
+    if (text.length() >= WIDTH) return text.substring(0, WIDTH); // Truncate if too long
+    int totalPadding = WIDTH - text.length();
+    int leftPadding = totalPadding / 2;
+    int rightPadding = totalPadding - leftPadding;
+
+    return " ".repeat(leftPadding) + text + " ".repeat(rightPadding);
   }
 
   public static void divider() {
-    log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", false);
+    log("━".repeat(WIDTH), false);
   }
 
   public static void log(String message, boolean inConsole) {

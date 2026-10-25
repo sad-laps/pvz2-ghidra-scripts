@@ -1,4 +1,4 @@
-//Ghidra Script for automatically mapping VTables, functions and other important information from the 64 bit libPvZ2.so
+//Ghidra script for mapping information in the 64 bit libPvZ2.so
 //@author sad
 //@category PvZ2 Tools
 //@keybinding
@@ -34,8 +34,8 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
   @Override
   protected void run() {
-    init("26.0.0", "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
-    logHeader("PvZ2 Mapper", VERSION);
+    init("26.0.0", "13.5.1", "pvz2mapping_output.log");
+    logHeader("PvZ2 Mapper", SCRIPT_VERSION, GAME_VERSION);
 
     // Create the Itanium C++ ABI structures beforehand
     initItaniumABIStructures();

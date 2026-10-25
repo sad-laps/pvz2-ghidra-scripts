@@ -1,6 +1,7 @@
 package com.sad.pvz2;
-
 import static com.sad.pvz2.ScriptLogger.*;
+
+import java.io.File;
 
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.script.GhidraScript;
@@ -12,7 +13,8 @@ import ghidra.program.model.symbol.*;
 import ghidra.util.exception.InvalidInputException;
 
 public abstract class PvZ2BaseScript extends GhidraScript {
-  public static String VERSION;
+  public String SCRIPT_VERSION;
+  public String GAME_VERSION;
 
   public static final int PTR_SIZE = 8;
 
@@ -29,9 +31,18 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   protected static Listing listing;
   protected static Memory mem;
 
-  protected void init(String version, String logPath, String logFileName) {
-    ScriptLogger.init(this, logPath, logFileName);
-    VERSION = version;
+  protected static File scriptDir;
+
+  protected void init(String version, String gameVersion, String logFileName) {
+    // TODO: Will have to change this on release to allow user to choose log file name and path!
+    File scriptFile = sourceFile.getFile(false);
+    scriptDir = scriptFile != null ? scriptFile.getParentFile() : new File(".");
+    File logsDir = new File(scriptDir.getParentFile(), "logs");
+
+    ScriptLogger.init(this, logsDir.getPath(), logFileName);
+
+    SCRIPT_VERSION = version;
+    GAME_VERSION = gameVersion;
     program = currentProgram;
     dtm = currentProgram.getDataTypeManager();
     sytab = currentProgram.getSymbolTable();

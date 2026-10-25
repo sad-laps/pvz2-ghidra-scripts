@@ -18,8 +18,8 @@ import ghidra.program.model.address.Address;
 public class ItaniumDemangler extends PvZ2BaseScript {
   @Override
   protected void run() {
-    init("26.0.0", "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
-    logHeader("Itanium Demangler", VERSION);
+    init("26.0.0", "13.5.1", "pvz2itanium_output.log");
+    logHeader("Itanium Demangler", SCRIPT_VERSION, GAME_VERSION);
 
     Address startAddr = toAddr("00a7b1ac");
     Address endAddr = toAddr("00b142c5");

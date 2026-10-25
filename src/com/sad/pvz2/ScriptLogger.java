@@ -5,24 +5,23 @@ import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-import ghidra.app.script.GhidraScript;
-
 /**
  * Helper class for logging messages in the Ghidra Console and log files
  */
 public class ScriptLogger {
   public static Path LOG_FILE_PATH;
-  public static GhidraScript SCRIPT;
+  public static PvZ2BaseScript SCRIPT;
 
-  public static void init(GhidraScript script, String filePath, String fileName) {
+  public static void init(PvZ2BaseScript script, String filePath, String fileName) {
     ScriptLogger.SCRIPT = script;
     ScriptLogger.LOG_FILE_PATH = Paths.get(filePath, fileName);
   }
 
-  public static void logHeader(String header, String version) {
+  public static void logHeader(String header, String version, String gameVersion) {
     // TODO: Make this better one day so it spaces out dynamically with the string size
     log("╔══════════════════════════════════════════════════════════╗", false);
     log("║                " + header  + " Log v" + version + "                   ║", false);
+    log("║                  Game Version: " + gameVersion + "                    ║", false);
     log("║               Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + "             ║", false);
     log("╚══════════════════════════════════════════════════════════╝", false);
   }

@@ -1,10 +1,7 @@
 package com.sad.pvz2;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -23,8 +20,9 @@ public class ScriptLogger {
   }
 
   public static void logHeader(String header, String version) {
+    // TODO: Make this better one day so it spaces out dynamically with the string size
     log("╔══════════════════════════════════════════════════════════╗", false);
-    log("║                " + header  + " Log v" + version + "                    ║", false);
+    log("║                " + header  + " Log v" + version + "                   ║", false);
     log("║               Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()) + "             ║", false);
     log("╚══════════════════════════════════════════════════════════╝", false);
   }

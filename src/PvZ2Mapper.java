@@ -10,7 +10,7 @@ import static com.sad.pvz2.ScriptLogger.*;
 
 import com.sad.pvz2.PvZ2BaseScript;
 import com.sad.pvz2.util.ItaniumUtil;
-import com.sad.pvz2.util.ItaniumUtil.ClassNameInfo;
+import com.sad.pvz2.util.ItaniumUtil.SymbolInfo;
 import com.sad.pvz2.util.StructUtil;
 
 import java.util.Iterator;
@@ -23,7 +23,6 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.pcode.*;
 import ghidra.program.model.symbol.*;
-import ghidra.util.exception.InvalidInputException;
 
 public class PvZ2Mapper extends PvZ2BaseScript {
   // Itanium C++ ABI Data Types
@@ -33,20 +32,16 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   public static StructureDataType baseClassTypeInfo;
   public static StructureDataType vmiClassTypeInfo;
 
-  public static String[] ITANIUM_SYMBOLS = {
-    "_ZTVN10__cxxabiv117__class_type_infoE",
-    "_ZTVN10__cxxabiv120__si_class_type_infoE",
-    "_ZTVN10__cxxabiv121__vmi_class_type_infoE"
-  };
-
-  public void run() {
-    init("1.0.0", "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
+  @Override
+  protected void run() {
+    init("26.0.0", "/mnt/data/Projects/Ghidra/logs/", "pvz2mapping_output.log");
     logHeader("PvZ2 Mapper", VERSION);
 
     // Create the Itanium C++ ABI structures beforehand
     initItaniumABIStructures();
 
-    // Analyze te
+    // Start analyzing from RTTI
+    // TODO: Change alanysis type maybe for other .so versions or make other Mappers scripts if necessary?
     analyzeRTTI();
   }
 
@@ -102,7 +97,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
    * Analyze the Itanium ABI symbols in the binary and use references to map VTables
    */
   public static void analyzeRTTI() {
-    for (String symName : ITANIUM_SYMBOLS) {
+    for (String symName : ItaniumUtil.ITANIUM_SYMBOLS) {
       List<Symbol> symbols = sytab.getGlobalSymbols(symName);
       for (Symbol sym : symbols)
         analyzeVTablesFromRTTI(sym);
@@ -151,14 +146,17 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
     // Get the reference from the `__type_name` inside the `type_info` inside the `__class_type_info`
     Data namePtrData = listing.getDataAt((Address) typeInfoData.getComponent(0).getComponent(1).getValue());
-    ClassNameInfo className = ItaniumUtil.demangleItaniumString(getStringFromData(namePtrData));
+    SymbolInfo className = ItaniumUtil.demangle(getStringFromData(namePtrData));
     log("  * Class Name       : \"" + className.getFullName() + '"');
-    if (className.getFullName().contains("$_")) return;
+    if (className.getFullName().contains("$_")) return; // TODO: Check why this crashes
 
-    setLabel(typeInfoAddr, className.getFullName() + "::type_info");
+    setLabel(typeInfoAddr, className.getFullName(), "type_info");
     
     Address rttiPtr = findRTTIPointer(typeInfoAddr);
-    //if (rttiPtr == null) return; // TODO: Try fix this somehow since for some reason some type infos dont find the pointer?
+    if (rttiPtr == null) { // TODO: Try fix this somehow since for some reason some type infos dont find the pointer?
+      warn("Couldn't find RTTI pointer address, skipping this for now.");
+      return;
+    }
     changeDataType(rttiPtr, UNDEFINED_POINTER_TYPE);
 
     Address vtablePtr = rttiPtr.add(PTR_SIZE);
@@ -178,19 +176,19 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     log("Analyzing Single Inheritance Class from 0x" + ref.getFromAddress());
   }
 
-  public static void analyzeVTable(Address addr, ClassNameInfo className, long size) {
-    log("  * VTable Address   : " + addr);
+  public static void analyzeVTable(Address addr, SymbolInfo className, long size) {
+    log("  * VTable Address   : 0x" + addr);
     
     StructureDataType vtableType = generateVTableStruct(className, size);
     changeDataType(addr, vtableType);
-    setLabel(addr, className.getFullName() + "VTable");
-    
+    setLabel(addr, className.getFullName(), className.getFullName() + "VTable");
+
     StructureDataType classType = generateClassStruct(className, vtableType);
     
     // Iterate through the components (function pointers) of the VTable and analyze them
     if (size == 0) return;
     Data vtableData = listing.getDataAt(addr);
-    
+
     log("  * Mapped Functions :");
     int numPointers = (int) (size / PTR_SIZE);
     for (int i = 0; i < numPointers; i++) {
@@ -202,24 +200,29 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     }
   }
 
-  public static void analyzeVTableFunction(int i, Address funcAddr, StructureDataType classType, ClassNameInfo className) {
+  public static void analyzeVTableFunction(int i, Address funcAddr, StructureDataType classType, SymbolInfo className) {
+    // Sometime the function might not be a function but padding it seems? check for that!
     Function func = listing.getFunctionAt(funcAddr);
     if (func == null) return;
+    // TODO: DON'T RENAME EXTERNAL FUNCTIONS ! Also use the external name in vtable struct.
+    // TODO: ALSO DON'T RENAME ALREADY NAMED FUNCTIONS (if for some reason they exist?)
     try {
       func.setName(className.getFullName() + "::func" + i, SourceType.USER_DEFINED);
     }
     catch (Exception e) {
-      error("Could not update function at 0x" + funcAddr, e);
+      error("Could not set function name at 0x" + funcAddr, e);
     }
 
     String funcName = func.getName();
 
     DecompileResults res = decomp.decompileFunction(func, 30, null);
+    if (!res.decompileCompleted()) return;
+    HighFunction highFunc = res.getHighFunction();
+    if (highFunc == null) return;
+
+    // TODO: Fix this, for some reason it doesnt see parameters WHEN THERE LITERALLY ARE PARAMETERS
     try {
       // Sets the parameters and return type correctly
-      if (!res.decompileCompleted()) return;
-      HighFunction highFunc = res.getHighFunction();
-      if (highFunc == null) return;
       HighFunctionDBUtil.commitParamsToDatabase(highFunc, true, HighFunctionDBUtil.ReturnCommitOption.COMMIT, SourceType.USER_DEFINED);
 
       // Set the first parameter name to `self` as it's always a pointer to the Object itself
@@ -227,6 +230,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       func.getParameter(0).setDataType(new PointerDataType(classType), SourceType.USER_DEFINED);
 
       // Try check for destroyer function to set the real class struct size
+      // Also change function name to `Class::destroy` or `Class::~Class` (idk if it's destructor or destroyer yet)!
       long detectedSize = extractClassSizeFromPcode(highFunc);
       if (detectedSize > 0 && classType.getLength() < detectedSize) {
         log("   + Detected Size   : " + detectedSize + " bytes (0x" + Long.toHexString(detectedSize) + ")");
@@ -234,7 +238,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       }
     }
     catch (Exception e) {
-      error("Could not update function at 0x" + funcAddr, e);
+      error("Could not update function parameters at 0x" + funcAddr, e);
     }
     log("  [" + i + "] 0x" + funcAddr + " -> " + funcName);
   }
@@ -272,8 +276,9 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     return -1;
   }
 
-  public static StructureDataType generateVTableStruct(ClassNameInfo className, long size) {
-    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name() + "VTable", 0);
+  // TODO: Change PVZ2_CATEGORY, will need to extend this and use namespaces accordingly!
+  public static StructureDataType generateVTableStruct(SymbolInfo className, long size) {
+    StructureDataType struct = new StructureDataType(PVZ2_CATEGORY, className.name() + "VTable", 0);
 
     // TODO: Will have to handle this differently, I could use the types given from the functions when I analyze them better, so do this after analyzing the functions best!
     int numPointers = (int) (size / PTR_SIZE);
@@ -285,8 +290,8 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     return struct;
   }
 
-  public static StructureDataType generateClassStruct(ClassNameInfo className, StructureDataType vtableType) {
-    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name(), 0);
+  public static StructureDataType generateClassStruct(SymbolInfo className, StructureDataType vtableType) {
+    StructureDataType struct = new StructureDataType(PVZ2_CATEGORY, className.name(), 0);
 
     // TODO: Will have to handle this differently, I could use the set parameters in the destroy functions or super classes when I analyze them better, so do this after analyzing the functions best?
     struct.add(new PointerDataType(vtableType), PTR_SIZE, "vtable", "");
@@ -326,49 +331,5 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       b.add(new ArrayDataType(baseClassTypeInfo, size, baseClassTypeInfo.getLength()), "__base_info", "");
     });
     return vmiStruct;
-  }
-
-  public static String getStringFromData(Data data) {
-    try {
-      if (data != null && data.getValue() instanceof String str)
-        return str;
-    }
-    catch (Exception e) {
-      error("Could not read string at 0x" + data.getAddress() + ": ", e);
-    }
-    return "";
-  }
-
-  /**
-   * Helper method to change data type of an address, returns error if it couldn't change it
-   */
-  public static void changeDataType(Address addr, DataType newType) {
-    // If it's already the exact same type, skip re-applying it!
-    Data existingData = listing.getDataAt(addr);
-    if (existingData != null) {
-      DataType currentType = existingData.getDataType();
-      if (currentType.isEquivalent(newType)) return;
-    }
-    
-    try {
-      int length = newType.getLength();
-      if (length > 0) {
-        listing.clearCodeUnits(addr, addr.add(length - 1), false);
-      }
-      listing.createData(addr, newType);
-      log("  [0x" + addr + "] Type assigned >> " + newType.getName());
-    }
-    catch (Exception e) {
-      error("Could not change type to " + newType.getName() + " at 0x" + addr + ": ", e);
-    }
-  }
-
-  public static void setLabel(Address addr, String name) {
-    try {
-      sytab.createLabel(addr, name, SourceType.USER_DEFINED);
-    }
-    catch (InvalidInputException e) {
-      error("Could not create label '" + name + "' at 0x" + addr, e);
-    }
   }
 }

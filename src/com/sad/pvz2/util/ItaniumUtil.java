@@ -5,6 +5,8 @@ package com.sad.pvz2.util;
 import java.util.ArrayList;
 import java.util.List;
 
+import ghidra.program.model.data.CategoryPath;
+
 /**
  * Utility class for helping with the Itanium C++ ABI.
  */
@@ -28,6 +30,10 @@ public class ItaniumUtil {
 
     public String getFullName() {
       return (namespace != null && !namespace.isEmpty()) ? namespace + "::" + name : name;
+    }
+
+    public CategoryPath toCategoryPath(CategoryPath rootCategory) {
+      return new CategoryPath(rootCategory, getFullName().split("::"));
     }
   }
 

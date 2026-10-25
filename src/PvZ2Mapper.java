@@ -181,7 +181,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     
     StructureDataType vtableType = generateVTableStruct(className, size);
     changeDataType(addr, vtableType);
-    setLabel(addr, className.getFullName(), className.getFullName() + "VTable");
+    setLabel(addr, className.getFullName(), className.name() + "VTable");
 
     StructureDataType classType = generateClassStruct(className, vtableType);
     
@@ -276,14 +276,13 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     return -1;
   }
 
-  // TODO: Change PVZ2_CATEGORY, will need to extend this and use namespaces accordingly!
   public static StructureDataType generateVTableStruct(SymbolInfo className, long size) {
-    StructureDataType struct = new StructureDataType(PVZ2_CATEGORY, className.name() + "VTable", 0);
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name() + "VTable", 0);
 
     // TODO: Will have to handle this differently, I could use the types given from the functions when I analyze them better, so do this after analyzing the functions best!
     int numPointers = (int) (size / PTR_SIZE);
     for (int i = 0; i < numPointers; i++) {
-      struct.add(UNDEFINED_POINTER_TYPE, PTR_SIZE, "func_" + i, "");
+      struct.add(UNDEFINED_POINTER_TYPE, PTR_SIZE, "func" + i, "");
     }
 
     dtm.addDataType(struct, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -291,7 +290,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   }
 
   public static StructureDataType generateClassStruct(SymbolInfo className, StructureDataType vtableType) {
-    StructureDataType struct = new StructureDataType(PVZ2_CATEGORY, className.name(), 0);
+    StructureDataType struct = new StructureDataType(className.toCategoryPath(PVZ2_CATEGORY), className.name(), 0);
 
     // TODO: Will have to handle this differently, I could use the set parameters in the destroy functions or super classes when I analyze them better, so do this after analyzing the functions best?
     struct.add(new PointerDataType(vtableType), PTR_SIZE, "vtable", "");

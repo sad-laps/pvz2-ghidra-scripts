@@ -9,11 +9,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import ghidra.program.model.lang.Processor;
+
 public class Mappings {
   private static final Map<String, String> classMappings = new HashMap<>();
 
-  public static void loadMappings(String filePath) {
-    loadMappings(new File(filePath));
+  public static void loadMappings(File mappingDir, Processor proc, String gameVersion) {
+    String arch = fromProcessor(proc);
+    log(" > Mapping for Processor Arch: " + arch);
+    loadMappings(new File(new File(mappingDir, arch), gameVersion + ".mapping"));
   }
 
   public static void loadMappings(File file) {
@@ -22,9 +26,6 @@ public class Mappings {
       for (String line : lines) {
         line = line.trim();
         if (line.isEmpty() || line.startsWith("#")) continue;
-
-        String[] parts = line.split(" ", 3);
-        classMappings.put(parts[1], parts[2]);
       }
     }
     catch (IOException e) {
@@ -32,5 +33,12 @@ public class Mappings {
     }
     log(classMappings.keySet().toString());
     log(classMappings.toString());
+  }
+
+  public static String fromProcessor(Processor proc) {
+    return switch (proc.toString()) {
+      case "AARCH64" -> "aarch64";
+      default -> "";
+    };
   }
 }

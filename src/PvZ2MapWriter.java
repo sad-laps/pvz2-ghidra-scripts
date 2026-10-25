@@ -8,6 +8,8 @@
 
 import static com.sad.pvz2.ScriptLogger.*;
 
+import java.io.File;
+
 import com.sad.pvz2.Mappings;
 import com.sad.pvz2.PvZ2BaseScript;
 
@@ -17,6 +19,6 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
     init("26.0.0", "13.5.1", "pvz2mapwriter_output.log");
     logHeader("PvZ2 Map-Writer", SCRIPT_VERSION, GAME_VERSION);
 
-    Mappings.loadMappings("/mnt/data/Projects/Ghidra/GhidraScripts/mappings/" + GAME_VERSION + ".mapping");
+    Mappings.loadMappings(new File(scriptDir.getParentFile(), "mappings"), currentProgram.getLanguage().getProcessor(), GAME_VERSION);
   }
 }

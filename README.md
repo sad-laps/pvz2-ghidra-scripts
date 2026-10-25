@@ -1,6 +1,6 @@
 # Plants vs Zombies 2 Ghidra Scripts
 
-Scripts for Ghidra to make reverse engineering easier.
+Scripts for Ghidra to make reverse engineering the Plants vs Zombies 2 easier.
 
 <div align="center">
 

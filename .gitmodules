@@ -1,0 +1,4 @@
+[submodule "mappings"]
+	path = mappings
+	url = https://codeberg.org/sad-laps/pvz2-mappings
+	branch = dev

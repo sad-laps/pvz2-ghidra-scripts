@@ -17,19 +17,22 @@ public class StructUtil {
   }
 
   public static StructureDataType getOrCreateStructure(DataTypeManager dtm, CategoryPath path, String name, StructBuilder builder) {
+    StructureDataType struct = new StructureDataType(path, name, 0);
+
     DataType existing = dtm.getDataType(path, name);
 
     if (existing instanceof StructureDataType dataType)
       return dataType;
 
-    StructureDataType struct = new StructureDataType(path, name, 0);
     try {
-      builder.accept(struct);
+      if (builder != null) builder.accept(struct);
     }
     catch (Exception e) {
       error("Failed to build structure: " + name, e);
     }
-    dtm.addDataType(struct, DataTypeConflictHandler.DEFAULT_HANDLER);
+
+    // Add or replace the structure in the DTM cleanly using REPLACE_HANDLER
+    dtm.addDataType(struct, DataTypeConflictHandler.REPLACE_HANDLER);
     return struct;
   }
 

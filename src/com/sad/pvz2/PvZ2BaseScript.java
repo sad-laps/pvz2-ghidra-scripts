@@ -22,7 +22,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   public static final String PVZ2_CATEGORY_PATH = "/_PvZ2Classes";
   public static final CategoryPath PVZ2_CATEGORY = new CategoryPath(PVZ2_CATEGORY_PATH);
 
-  public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
+  public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT, PTR_SIZE); // undefined *
 
   protected static DecompInterface decomp = new DecompInterface();
 
@@ -74,7 +74,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
         listing.clearCodeUnits(addr, addr.add(length - 1), false);
       }
       listing.createData(addr, newType);
-      log("  [0x" + addr + "] Type assigned >> " + newType.getName());
+      log(" [0x" + addr + "] Type assigned >> " + newType.getName());
     }
     catch (Exception e) {
       error("Could not change type to " + newType.getName() + " at 0x" + addr + ": ", e);
@@ -82,7 +82,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   }
   
   public static void setLabel(Address addr, String namespaceStr, String labelName) {
-    log(" * Creating label: " + namespaceStr + labelName);
+    log(" * Added label: " + namespaceStr + "::" + labelName);
     try {
       Namespace nspc = getOrCreateNamespace(namespaceStr);
       symTab.createLabel(addr, labelName, nspc, SourceType.USER_DEFINED);
@@ -96,15 +96,14 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     Namespace ns = program.getGlobalNamespace();
     if (namespacePath == null || namespacePath.isEmpty()) return ns;
 
-    String[] parts = namespacePath.split("::");
-    for (String nsPart : parts) {
+    for (String nsPart : namespacePath.split("::")) {
       if (nsPart.isEmpty()) continue;
 
       Namespace sub = symTab.getNamespace(nsPart, ns);
       if (sub == null) {
         try {
           sub = symTab.createNameSpace(ns, nsPart, SourceType.USER_DEFINED);
-          log(" * Create namespace at '" + namespacePath + "'");
+          log(" * Added namespace '" + namespacePath + "'");
         }
         catch (Exception e) {
           error("Could not create namespace at '" + namespacePath + "'", e);

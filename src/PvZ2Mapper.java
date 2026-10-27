@@ -9,21 +9,34 @@
 import static com.sad.pvz2.ScriptLogger.*;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.sad.pvz2.PvZ2BaseScript;
 import com.sad.pvz2.mapping.MappingAST;
 import com.sad.pvz2.mapping.MappingUtil;
 import com.sad.pvz2.util.StructUtil;
 
+import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
+import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.CharDataType;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.FunctionDefinitionDataType;
 import ghidra.program.model.data.LongLongDataType;
+import ghidra.program.model.data.ParameterDefinition;
+import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.PointerTypedef;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.UnsignedIntegerDataType;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Parameter;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.HighFunctionDBUtil;
+import ghidra.program.model.symbol.SourceType;
 
 public class PvZ2Mapper extends PvZ2BaseScript {
   // Itanium C++ ABI Data Types
@@ -103,15 +116,22 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   public static void map() {
     if (MAPPINGS == null) return;
 
+    for (MappingAST.PtrDef ptr : MAPPINGS.ptrs())
+      if (ptr != null) mapPointer(ptr);
+
+    for (MappingAST.FuncDef sfunc : MAPPINGS.sfuncs()) 
+      if (sfunc != null) mapFunction(null, sfunc);
+
+    for (MappingAST.VarDef svar : MAPPINGS.svars()) 
+      if (svar != null) mapVariable(null, svar);
+
     for (MappingAST.ClassDef classDef : MAPPINGS.classes())
       if (classDef != null) mapClass(classDef);
-
-    // TODO: Add sfunc/svar/ptr maps
   }
 
   public static void mapClass(MappingAST.ClassDef def) {
     String fullName = def.name;
-    
+
     boolean isNamespaceOnly = def.size.toString().equals(MappingUtil.WILDCARD);
 
     String pathStr = PVZ2_CATEGORY_PATH + "/" + fullName.replace("::", "/");
@@ -125,10 +145,27 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     else {
       try {
         dtm.createCategory(catPath);
+        log("Created Namespace Category: " + catPath);
         String shortName = getShortName(fullName);
 
-        StructureDataType struct = StructUtil.getOrCreateStructure(dtm, catPath, shortName, b -> {
-          // TODO: add the fields from def
+        // Map the VTable first as it could be used by the fields
+        if (def.vtable != null) mapVTable(fullName, catPath, def.vtable);
+
+        // Map the class related functions
+        if (def.funcs != null) {
+          for (MappingAST.FuncDef funcDef : def.funcs) mapFunction(fullName, funcDef);
+        }
+
+        if (def.vars != null)
+          for (MappingAST.VarDef varDef : def.vars) mapVariable(fullName, varDef);
+
+        // Map the Class fields
+        StructUtil.getOrCreateStructure(dtm, catPath, shortName, b -> {
+          for (MappingAST.FieldDef field : def.fields) {
+            int offset = Integer.decode(field.startOffset);
+            DataType dataType = resolveDataType(field.type);
+            b.insertAtOffset(offset, dataType, dataType.getLength(), field.name, "");
+          }
         });
 
         log("Created Structure Class: " + fullName + " [Size: " + def.size + "]");
@@ -139,17 +176,180 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     }
   }
 
-  public static CategoryPath getCategoryPath(String fullName) {
-    int lastIdx = fullName.lastIndexOf("::");
-    if (lastIdx == -1) return new CategoryPath(PVZ2_CATEGORY_PATH);
+  public static void mapVTable(String className, CategoryPath catPath, MappingAST.VTableDef vtableDef) {
+    String vtName = vtableDef.name;
 
-    String subPath = fullName.substring(0, lastIdx).replace("::", "/");
-    return new CategoryPath(PVZ2_CATEGORY_PATH + "/" + subPath);
+    try {
+      StructureDataType vtStruct = StructUtil.getOrCreateStructure(dtm, catPath, vtName, b -> {
+        for (MappingAST.VFuncDef vfunc : vtableDef.funcs) {
+          int offset = vfunc.index * PTR_SIZE;
+          String fnName = vfunc.funcDef.name.toString();
+
+          FunctionDefinitionDataType fnDef = mapFunction(className, vfunc.funcDef, catPath);
+          DataType slotType = (fnDef != null) ? new PointerDataType(fnDef, PTR_SIZE) : UNDEFINED_POINTER_TYPE;
+          b.insertAtOffset(offset, slotType, PTR_SIZE, fnName, "");
+        }
+      });
+
+      Address vtAddr = getAddrFromRva(vtableDef.offset);
+      changeDataType(vtAddr, vtStruct);
+      setLabel(vtAddr, className, vtName);
+
+      log("Created VTable Structure: " + vtName + " [Size: " + vtableDef.size.toString() + ", Slots: " + vtableDef.funcs.size() + "]");
+    }
+    catch (Exception e) {
+      error("Failed to create VTable structure " + vtName + ": ", e);
+    }
+  }
+  
+  // TODO: Fix thunks not using namespace and t_FunctionName (might actually not even map them lol)
+  public static FunctionDefinitionDataType mapFunction(String className, MappingAST.FuncDef def, CategoryPath catPath) {
+    if (def == null || def.offset == null || def.offset.equals(MappingUtil.WILDCARD)) return null;
+
+    Address addr = getAddrFromRva(def.offset);
+    if (addr == null) return null;
+
+    try {
+      Function func = program.getFunctionManager().getFunctionAt(addr);
+
+      if (func == null) return null;
+      DataType returnType = resolveDataType(def.returnType);
+      if (returnType == UNDEFINED_POINTER_TYPE) returnType = func.getReturnType();
+
+      String fnName = def.name.toString();
+      if (!fnName.equals(MappingUtil.WILDCARD))
+        setLabel(addr, (className != null) ? className : "", fnName);
+
+      FunctionDefinitionDataType fnDef = new FunctionDefinitionDataType(fnName);
+      fnDef.setReturnType(returnType);
+
+      // TODO: Map Locals
+
+      // Commit parameters from decomp as the assembly doesn't have it for some reason
+      DecompileResults res = decomp.decompileFunction(func, 30, null);
+      if (res != null && res.decompileCompleted()) {
+        HighFunction highFunc = res.getHighFunction();
+        if (highFunc != null) {
+          HighFunctionDBUtil.commitParamsToDatabase(highFunc, true, HighFunctionDBUtil.ReturnCommitOption.COMMIT, SourceType.USER_DEFINED);
+        }
+      }
+
+      Parameter[] existingParams = func.getParameters();
+      List<ParameterDefinition> paramDefList = new ArrayList<>();
+      for (Parameter ep : existingParams) {
+        paramDefList.add(new ParameterDefinitionImpl(ep.getName(), ep.getDataType(), null));
+      }
+
+      if (def.params != null) {
+        for (MappingAST.ParamDef paramDef : def.params) {
+          DataType pType = resolveDataType(paramDef.type);
+
+          String pName = (paramDef.name != null && !paramDef.name.equals(MappingUtil.WILDCARD)) 
+            ? paramDef.name : "param_" + paramDef.index;
+
+          ParameterDefinition newParamDef = new ParameterDefinitionImpl(pName, pType, null);
+
+          paramDefList.set(paramDef.index, newParamDef);
+          log(" Mapped Parameter: " + pName);
+        }
+      }
+      ParameterDefinition[] paramDefs = paramDefList.toArray(new ParameterDefinition[0]);
+      fnDef.setArguments(paramDefs);
+
+      // Save Function Description in Category
+      if (catPath != null) 
+        fnDef.setCategoryPath(catPath);
+      else if (className != null)
+        fnDef.setCategoryPath(getCategoryPath(className));
+      else
+        fnDef.setCategoryPath(new CategoryPath("/_PvZ2Functions"));
+
+      ApplyFunctionSignatureCmd cmd = new ApplyFunctionSignatureCmd(addr, fnDef, SourceType.USER_DEFINED);
+
+      boolean success = cmd.applyTo(program);
+      if (!success) {
+        error("Failed to apply function definition for " + fnName + ": " + cmd.getStatusMsg(), null);
+      }
+      else {
+        log("Mapped Function: " + (className != null ? className + "::" : "") + fnName + " at " + addr);
+      }
+
+      return fnDef;
+    }
+    catch (Exception e) {
+      error("Failed to map function " + def.name + " at 0x" + def.offset + ": ", e);
+    }
+    return null;
+  }
+
+  public static FunctionDefinitionDataType mapFunction(String className, MappingAST.FuncDef def) {
+    return mapFunction(className, def, null);
+  }
+  
+  public static void mapVariable(String className, MappingAST.VarDef def) {
+    if (def == null || def.offset == null || def.offset.equals(MappingUtil.WILDCARD)) return;
+
+    Address addr = getAddrFromRva(def.offset);
+    if (addr == null) return;
+
+    try {
+      DataType dataType = resolveDataType(def.type);
+      if (dataType != null) changeDataType(addr, dataType);
+      if (def.name != null && !def.name.isEmpty()) setLabel(addr, className, def.name);
+
+      log("Mapped Variable: " + className + "::" + def.name + " at " + def.offset);
+    }
+    catch (Exception e) {
+      error("Failed to map variable " + def.name + " at 0x" + addr + ": ", e);
+    }
+  }
+  
+  public static void mapPointer(MappingAST.PtrDef def) {
+    if (def == null || def.offset == null || def.offset.equals(MappingUtil.WILDCARD)) return;
+
+    Address addr = getAddrFromRva(def.offset);
+    if (addr == null) return;
+
+    try {
+      DataType dataType = resolveDataType(def.type);
+      if (dataType != null) changeDataType(addr, dataType);
+
+      log("Mapped Pointer: " + " at " + def.offset);
+    }
+    catch (Exception e) {
+      error("Failed to map pointer at 0x" + addr + ": ", e);
+    }
+  }
+
+  public static DataType resolveDataType(String typeName) {
+    if (typeName == null || typeName.isEmpty()) return null;
+
+    if (typeName.endsWith("*")) {
+      String baseTypeName = typeName.substring(0, typeName.length() - 1).strip();
+      DataType baseDt = resolveDataType(baseTypeName);
+      return new PointerDataType(baseDt != null ? baseDt : null, PTR_SIZE);
+    }
+
+    DataType dt = dtm.getDataType(typeName);
+    if (dt != null) return dt;
+
+    List<DataType> matches = new ArrayList<>();
+    dtm.findDataTypes(typeName, matches);
+    if (!matches.isEmpty()) return matches.get(0);
+
+    return UNDEFINED_POINTER_TYPE;
   }
 
   public static String getShortName(String fullName) {
     int lastIdx = fullName.lastIndexOf("::");
     return (lastIdx == -1) ? fullName : fullName.substring(lastIdx + 2);
+  }
+
+  public static CategoryPath getCategoryPath(String fullName) {
+    if (fullName == null || fullName.isEmpty()) return new CategoryPath(PVZ2_CATEGORY_PATH);
+
+    String pathStr = PVZ2_CATEGORY_PATH + "/" + fullName.replace("::", "/");
+    return new CategoryPath(pathStr);
   }
 
   public static Address getAddrFromRva(String rvaOffset) {

@@ -18,15 +18,17 @@ public abstract class PvZ2BaseScript extends GhidraScript {
 
   public static final int PTR_SIZE = 8;
 
+  public static final String PVZ2_CATEGORY_PATH = "/_PvZ2Classes";
+
   public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
 
-  public static final CategoryPath PVZ2_CATEGORY = new CategoryPath("/_PvZ2Classes");
+  public static final CategoryPath PVZ2_CATEGORY = new CategoryPath(PVZ2_CATEGORY_PATH);
 
   protected static DecompInterface decomp = new DecompInterface();
 
   protected static Program program;
   protected static DataTypeManager dtm;
-  protected static SymbolTable sytab;
+  protected static SymbolTable symTab;
   protected static ReferenceManager refman;
   protected static Listing listing;
   protected static Memory mem;
@@ -45,7 +47,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     GAME_VERSION = gameVersion;
     program = currentProgram;
     dtm = currentProgram.getDataTypeManager();
-    sytab = currentProgram.getSymbolTable();
+    symTab = currentProgram.getSymbolTable();
     refman = currentProgram.getReferenceManager();
     listing = currentProgram.getListing();
     mem = currentProgram.getMemory();
@@ -81,7 +83,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     log(" * Creating label: " + namespaceStr + labelName);
     try {
       Namespace nspc = getOrCreateNamespace(namespaceStr);
-      sytab.createLabel(addr, labelName, nspc, SourceType.USER_DEFINED);
+      symTab.createLabel(addr, labelName, nspc, SourceType.USER_DEFINED);
     }
     catch (InvalidInputException e) {
       error("Could not create label '" + namespaceStr + "::" + labelName + "' at 0x" + addr, e);
@@ -96,10 +98,10 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     for (String nsPart : parts) {
       if (nsPart.isEmpty()) continue;
 
-      Namespace sub = sytab.getNamespace(nsPart, ns);
+      Namespace sub = symTab.getNamespace(nsPart, ns);
       if (sub == null) {
         try {
-          sub = sytab.createNameSpace(ns, nsPart, SourceType.USER_DEFINED);
+          sub = symTab.createNameSpace(ns, nsPart, SourceType.USER_DEFINED);
           log(" * Create namespace at '" + namespacePath + "'");
         }
         catch (Exception e) {

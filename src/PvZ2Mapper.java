@@ -98,7 +98,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
    */
   public static void analyzeRTTI() {
     for (String symName : ItaniumUtil.ITANIUM_SYMBOLS) {
-      List<Symbol> symbols = sytab.getGlobalSymbols(symName);
+      List<Symbol> symbols = symTab.getGlobalSymbols(symName);
       for (Symbol sym : symbols)
         analyzeVTablesFromRTTI(sym);
     }

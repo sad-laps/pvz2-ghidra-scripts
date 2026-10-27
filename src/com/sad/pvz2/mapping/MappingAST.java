@@ -10,21 +10,27 @@ public class MappingAST {
     List<VarDef> svars,
     List<PtrDef> ptrs
   ) {
-    public ClassDef getOrAddClass(String name, String size) {
+    public ClassDef getOrAddClass(String name, String size, List<FieldDef> fields) {
       for (ClassDef c : classes) {
         if (!c.name.equals(name)) continue;
 
-        // Update size if it's wildcard (might make a helper function for updating wildcarded values later or)
-        boolean isSizeEmpty = (c.size == null || c.size.equals(MappingUtil.WILDCARD));
-        boolean isNewSizeEmpty = (size == null || !size.equals(MappingUtil.WILDCARD));
-        if (isSizeEmpty && isNewSizeEmpty) c.size = size;
+        c.size.update(size);
+        if (fields != null && !fields.isEmpty()) c.fields = fields;
 
         return c;
       }
 
-      ClassDef newClass = new ClassDef(name, size, null, null, null, null);
+      ClassDef newClass = new ClassDef(name, size, null, null, fields, null);
       classes.add(newClass);
       return newClass;
+    }
+
+    public FuncDef getOrSetSFunc(String offset, String returnType, String name) {
+      return FuncDef.getOrSet(sfuncs, offset, returnType, name);
+    }
+
+    public VarDef getOrSetSVar(String offset, String type, String name) {
+      return VarDef.getOrSet(svars, offset, type, name);
     }
 
     public String serialize() {
@@ -52,7 +58,8 @@ public class MappingAST {
 
   // Structure & Class Definitions
   public static class ClassDef {
-    public String name, size;
+    public String name;
+    public Wildcardable size;
     public VTableDef vtable;
     public List<VarDef> vars;
     public List<FieldDef> fields;
@@ -60,11 +67,40 @@ public class MappingAST {
 
     public ClassDef(String name, String size, VTableDef vtable, List<VarDef> vars, List<FieldDef> fields, List<FuncDef> funcs) {
       this.name = name;
-      this.size = size;
+      this.size = new Wildcardable(size);
       this.vtable = vtable;
       this.vars = vars != null ? vars : new ArrayList<>();
       this.fields = fields != null ? fields : new ArrayList<>();
       this.funcs = funcs != null ? funcs : new ArrayList<>();
+    }
+
+    public boolean hasVFuncAtOffset(String offset) {
+      if (vtable == null || vtable.funcs == null) return false;
+      for (var vf : vtable.funcs) {
+        if (vf.funcDef.offset.equalsIgnoreCase(offset)) return true;
+      }
+      return false;
+    }
+
+    public FuncDef getOrSetFunc(String offset, String returnType, String name) {
+      return FuncDef.getOrSet(funcs, offset, returnType, name);
+    }
+
+    public VarDef getOrSetVar(String offset, String type, String name) {
+      return VarDef.getOrSet(vars, offset, type, name);
+    }
+
+    public VTableDef getOrSetVTable(String offset, String superVTable, String name, String size) {
+      if (this.vtable == null) {
+        this.vtable = new VTableDef(offset, superVTable, name, size, null);
+      }
+      else {
+        this.vtable.offset = offset;
+        this.vtable.name = name;
+        this.vtable.superVTable.update(superVTable);
+        this.vtable.size.update(size);
+      }
+      return this.vtable;
     }
 
     @Override
@@ -81,16 +117,56 @@ public class MappingAST {
     }
   }
   public static class FuncDef {
-    public String offset, returnType, name;
+    public String offset, returnType;
+    public Wildcardable name;
     public List<ParamDef> params;
     public List<LocalDef> locals;
 
     public FuncDef(String offset, String returnType, String name, List<ParamDef> params, List<LocalDef> locals) {
       this.offset = offset;
       this.returnType = returnType;
-      this.name = name;
+      this.name = new Wildcardable(name);
       this.params = params != null ? params : new ArrayList<>();
       this.locals = locals != null ? locals : new ArrayList<>();
+    }
+
+    public static FuncDef getOrSet(List<FuncDef> list, String offset, String returnType, String name) {
+      for (FuncDef f : list) {
+        if (f.offset.equalsIgnoreCase(offset)) {
+          f.returnType = returnType;
+          f.name.update(name);
+          return f;
+        }
+      }
+      FuncDef newFunc = new FuncDef(offset, returnType, name, null, null);
+      list.add(newFunc);
+      return newFunc;
+    }
+
+    public ParamDef getOrSetParam(int index, String type, String name) {
+      for (ParamDef p : params) {
+        if (p.index == index) {
+          p.type = type;
+          p.name = name;
+          return p;
+        }
+      }
+      ParamDef newParam = new ParamDef(index, type, name);
+      params.add(newParam);
+      return newParam;
+    }
+
+    public LocalDef getOrSetLocal(String oldName, String type, String newName) {
+      for (LocalDef l : locals) {
+        if (l.newName.equalsIgnoreCase(newName)) {
+          l.type = type;
+          l.newName = newName;
+          return l;
+        }
+      }
+      LocalDef newLocal = new LocalDef(oldName, type, newName);
+      locals.add(newLocal);
+      return newLocal;
     }
 
     public String toString(String prefix, int layer) {
@@ -102,6 +178,11 @@ public class MappingAST {
 
       return sb.toString();
     }
+
+    @Override
+    public String toString() {
+      return toString("", 0);
+    }
   }
   public static class VarDef {
     public String offset, type, name;
@@ -112,8 +193,27 @@ public class MappingAST {
       this.name = name;
     }
 
+    public static VarDef getOrSet(List<VarDef> list, String offset, String type, String name) {
+      for (VarDef v : list) {
+        if (v.offset.equalsIgnoreCase(offset)) {
+          v.type = type;
+          v.name = name;
+          return v;
+        }
+      }
+
+      VarDef newVar = new VarDef(offset, type, name);
+      list.add(newVar);
+      return newVar;
+    }
+
     public String toString(String prefix, int layer) {
       return " ".repeat(layer) + prefix + "VAR " + offset + " " + type + " " + name + "\n";
+    }
+
+    @Override
+    public String toString() {
+      return toString("", 0);
     }
   }
   public static class PtrDef {
@@ -132,15 +232,34 @@ public class MappingAST {
 
   // Class Context
   public static class VTableDef {
-    public String offset, superVTable, name, size;
+    public String offset, name;
+    public Wildcardable superVTable, size;
     public List<VFuncDef> funcs;
 
     public VTableDef(String offset, String superVTable, String name, String size, List<VFuncDef> funcs) {
       this.offset = offset;
-      this.superVTable = superVTable;
+      this.superVTable = new Wildcardable(superVTable);
       this.name = name;
-      this.size = size;
+      this.size = new Wildcardable(size);
       this.funcs = funcs != null ? funcs : new ArrayList<>();
+    }
+
+    public VFuncDef getOrSetVFunc(int index, String offset, String returnType, String name, List<ParamDef> params, List<LocalDef> locals) {
+      for (VFuncDef vf : funcs) {
+        if (vf.index == index) {
+          vf.funcDef.offset = offset;
+          vf.funcDef.returnType = returnType;
+          vf.funcDef.name.update(name);
+          if (params != null && !params.isEmpty()) vf.funcDef.params = params;
+          if (locals != null && !locals.isEmpty()) vf.funcDef.locals = locals;
+          return vf;
+        }
+      }
+
+      FuncDef funcDef = new FuncDef(offset, returnType, name, params, locals);
+      VFuncDef newVFunc = new VFuncDef(index, funcDef);
+      funcs.add(newVFunc);
+      return newVFunc;
     }
 
     public String toString(int layer) {
@@ -150,6 +269,11 @@ public class MappingAST {
       for (var vfunc : funcs) sb.append(vfunc.toString(layer + 2));
 
       return sb.toString();
+    }
+    
+    @Override
+    public String toString() {
+      return toString(0);
     }
   }
   public static class VFuncDef {
@@ -161,6 +285,14 @@ public class MappingAST {
       this.funcDef = funcDef;
     }
 
+    public ParamDef getOrSetParam(int index, String type, String name) {
+      return funcDef.getOrSetParam(index, type, name);
+    }
+
+    public LocalDef getOrSetLocal(String oldName, String type, String newName) {
+      return funcDef.getOrSetLocal(oldName, type, newName);
+    }
+
     public String toString(int layer) {
       StringBuilder sb = new StringBuilder();
 
@@ -169,6 +301,11 @@ public class MappingAST {
       for (var local : funcDef.locals) sb.append(" ".repeat(layer + 2) + local);
 
       return sb.toString();
+    }
+
+    @Override
+    public String toString() {
+      return toString(0);
     }
   }
   public static class FieldDef {
@@ -182,6 +319,11 @@ public class MappingAST {
 
     public String toString(int layer) {
       return " ".repeat(layer) + "FIELD " + startOffset + " " + type + " " + name + "\n";
+    }
+
+    @Override
+    public String toString() {
+      return toString(0);
     }
   }
 
@@ -213,6 +355,32 @@ public class MappingAST {
     @Override
     public String toString() {
       return "LOCAL " + oldName + " " + type + " " + newName + "\n";
+    }
+  }
+
+  public static class Wildcardable {
+    String value;
+
+    public Wildcardable(String value) {
+      this.value = (value != null) ? value : MappingUtil.WILDCARD;
+    }
+
+    public void update(String newVal) {
+      update(newVal, false);
+    }
+
+    public void update(String newVal, boolean force) {
+      boolean isOldWildcard = (value == null || value.equals(MappingUtil.WILDCARD));
+      boolean isNewValid = (newVal != null && !newVal.equals(MappingUtil.WILDCARD));
+
+      if (force || (isOldWildcard && isNewValid)) {
+        this.value = (newVal != null) ? newVal : MappingUtil.WILDCARD;
+      }
+    }
+
+    @Override
+    public String toString() {
+      return (value != null) ? value : MappingUtil.WILDCARD;
     }
   }
 }

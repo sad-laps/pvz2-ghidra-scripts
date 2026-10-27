@@ -84,10 +84,15 @@ public class MappingUtil {
 
         switch (keyword) {
           // PTR <OFFSET> <TYPE>
-          case "PTR" -> ptrs.add(new MappingAST.PtrDef(tokens[1], tokens[2]));
+          case "PTR" -> {
+            String type = joinTokens(tokens, 2, tokens.length);
+            ptrs.add(new MappingAST.PtrDef(tokens[1], type));
+          }
           // VAR <OFFSET> <TYPE> <IDENT>
           case "VAR" -> {
-            var varDef = new MappingAST.VarDef(tokens[1], tokens[2], tokens[3]);
+            String name = tokens[tokens.length - 1];
+            String type = joinTokens(tokens, 2, tokens.length - 1);
+            var varDef = new MappingAST.VarDef(tokens[1], type, name);
             if (currentClass != null) {
               currentClass.vars.add(varDef);
             }
@@ -110,12 +115,17 @@ public class MappingUtil {
           }
           // FIELD <STARTING OFFSET> <TYPE> <IDENT>
           case "FIELD" -> {
-            if (currentClass != null) currentClass.fields.add(new MappingAST.FieldDef(tokens[1], tokens[2], tokens[3]));
+            if (currentClass == null) continue;
+            String name = tokens[tokens.length - 1];
+            String type = joinTokens(tokens, 2, tokens.length - 1);
+            currentClass.fields.add(new MappingAST.FieldDef(tokens[1], type, name));
           }
           // S/FUNC <OFFSET> <TYPE> <IDENT>
           case "FUNC", "SFUNC" -> {
+            String name = tokens[tokens.length - 1];
+            String returnType = joinTokens(tokens, 2, tokens.length - 1);
             currentFunc = new MappingAST.FuncDef(
-              tokens[1], tokens[2], tokens[3], new ArrayList<>(), new ArrayList<>()
+              tokens[1], returnType, name, new ArrayList<>(), new ArrayList<>()
             );
             if (keyword.equals("SFUNC")) {
               funcs.add(currentFunc);
@@ -126,23 +136,27 @@ public class MappingUtil {
           }
           // VFUNC <INDEX> <OFFSET> <TYPE> <IDENT>
           case "VFUNC" -> {
-            int index = Integer.parseInt(tokens[1]);
-            var funcDef = new MappingAST.FuncDef(
-              tokens[2], tokens[3], tokens[4], new ArrayList<>(), new ArrayList<>()
+            if (currentVTable == null) continue;
+            String name = tokens[tokens.length - 1];
+            String returnType = joinTokens(tokens, 3, tokens.length - 1);
+            currentFunc = new MappingAST.FuncDef(
+              tokens[2], returnType, name, new ArrayList<>(), new ArrayList<>()
             );
-            currentFunc = funcDef;
-            if (currentVTable != null)
-              currentVTable.funcs.add(new MappingAST.VFuncDef(index, funcDef));
+            currentVTable.funcs.add(new MappingAST.VFuncDef(Integer.parseInt(tokens[1]), currentFunc));
           }
           // PARAM <INDEX> <TYPE> <IDENT>
           case "PARAM" -> {
-            if (currentFunc != null)
-              currentFunc.params.add(new MappingAST.ParamDef(Integer.parseInt(tokens[1]), tokens[2], tokens[3]));
+            if (currentFunc == null) continue;
+            String name = tokens[tokens.length - 1];
+            String type = joinTokens(tokens, 2, tokens.length - 1);
+            currentFunc.params.add(new MappingAST.ParamDef(Integer.parseInt(tokens[1]), type, name));
           }
           // LOCAL <(old)IDENT> <TYPE> <IDENT>
           case "LOCAL" -> {
-            if (currentFunc != null)
-              currentFunc.locals.add(new MappingAST.LocalDef(tokens[1], tokens[2], tokens[3]));
+            if (currentFunc == null) continue;
+            String newName = tokens[tokens.length - 1];
+            String type = joinTokens(tokens, 2, tokens.length - 1);
+            currentFunc.locals.add(new MappingAST.LocalDef(tokens[1], type, newName));
           }
         }
       }
@@ -150,6 +164,15 @@ public class MappingUtil {
       if (currentClass != null) classes.add(currentClass);
 
       return new MappingAST.MappingFile(classes, funcs, vars, ptrs);
+    }
+
+    private String joinTokens(String[] tokens, int start, int end) {
+      StringBuilder sb = new StringBuilder();
+      for (int i = start; i < end; i++) {
+        sb.append(tokens[i]);
+        if (i < end - 1) sb.append(" ");
+      }
+      return sb.toString();
     }
   }
 }

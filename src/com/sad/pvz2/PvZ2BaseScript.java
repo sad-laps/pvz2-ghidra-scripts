@@ -6,6 +6,7 @@ import java.io.File;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressFactory;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.Memory;
@@ -19,14 +20,14 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   public static final int PTR_SIZE = 8;
 
   public static final String PVZ2_CATEGORY_PATH = "/_PvZ2Classes";
+  public static final CategoryPath PVZ2_CATEGORY = new CategoryPath(PVZ2_CATEGORY_PATH);
 
   public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT); // undefined *
-
-  public static final CategoryPath PVZ2_CATEGORY = new CategoryPath(PVZ2_CATEGORY_PATH);
 
   protected static DecompInterface decomp = new DecompInterface();
 
   protected static Program program;
+  protected static AddressFactory addr;
   protected static DataTypeManager dtm;
   protected static SymbolTable symTab;
   protected static ReferenceManager refman;
@@ -46,6 +47,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     SCRIPT_VERSION = version;
     GAME_VERSION = gameVersion;
     program = currentProgram;
+    addr = currentProgram.getAddressFactory();
     dtm = currentProgram.getDataTypeManager();
     symTab = currentProgram.getSymbolTable();
     refman = currentProgram.getReferenceManager();

@@ -264,7 +264,7 @@ public class MappingAST {
         if (vf.index == index) {
           vf.funcDef.offset = offset;
           vf.funcDef.returnType = returnType;
-          vf.funcDef.name.update(name);
+          vf.funcDef.name.update(name, true);
           if (params != null && !params.isEmpty()) vf.funcDef.params = params;
           if (locals != null && !locals.isEmpty()) vf.funcDef.locals = locals;
           return vf;

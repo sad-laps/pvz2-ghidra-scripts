@@ -226,8 +226,6 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       FunctionDefinitionDataType fnDef = new FunctionDefinitionDataType(fnName);
       fnDef.setReturnType(returnType);
 
-      // TODO: Map Locals
-
       // Commit parameters from decomp as the assembly doesn't have it for some reason
       DecompileResults res = decomp.decompileFunction(func, 30, null);
       if (res != null && res.decompileCompleted()) {
@@ -240,10 +238,9 @@ public class PvZ2Mapper extends PvZ2BaseScript {
         while (symbols.hasNext()) {
           HighSymbol symbol = symbols.next();
           if (symbol == null || symbol.isParameter()) continue;
-
+          
           String currentName = symbol.getName();
-          log(" Mapped Parameter: " );
-
+          
           MappingAST.LocalDef localDef = def.locals.get(currentName);
           if (localDef == null) continue;
 

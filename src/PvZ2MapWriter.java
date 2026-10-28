@@ -28,6 +28,7 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolType;
 
+// TODO: Add more logs to see what was added/changed !
 public class PvZ2MapWriter extends PvZ2BaseScript {
   public static File MAPPING_DIR;
   public static MappingAST.MappingFile MAPPINGS;
@@ -140,7 +141,13 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
 
       try {
         Address vfuncAddr = addr.add(compOffset);
-        long targetFnAddrVal = mem.getLong(vfuncAddr);
+        long targetFnAddrVal;
+        if (PTR_SIZE == 4) {
+          targetFnAddrVal = mem.getInt(vfuncAddr) & 0xFFFFFFFFL; // Mask to unsigned 32-bit
+        }
+        else {
+          targetFnAddrVal = mem.getLong(vfuncAddr);
+        }
         Address targetFnAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(targetFnAddrVal);
         if (targetFnAddr != null) {
           Function func = program.getFunctionManager().getFunctionAt(targetFnAddr);
@@ -150,7 +157,7 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
         }
       }
       catch (Exception e) {
-        error("Faile to map VTable: ", e);
+        error("Failed to write VTable: ", e);
       }
 
       index++;

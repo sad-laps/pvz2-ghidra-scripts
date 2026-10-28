@@ -1,6 +1,6 @@
 # Plants vs Zombies 2 Ghidra Scripts
 
-Scripts for Ghidra to make reverse engineering the Plants vs Zombies 2 easier.
+Ghidra scripts to make reverse engineering Plants vs Zombies 2 simpler.
 
 <div align="center">
 
@@ -9,6 +9,14 @@ Scripts for Ghidra to make reverse engineering the Plants vs Zombies 2 easier.
 &nbsp;
 [![GitHub Repo](https://img.shields.io/github/stars/sad-laps/pvz2-ghidra-scripts?style=for-the-badge&logo=github&label=Github&labelColor=%2334373d&color=%234183c4)
 ](https://github.com/sad-laps/pvz2-ghidra-scripts)
+
+### v Mappings Repos v
+
+[![Codeberg Repo](https://img.shields.io/gitea/stars/sad-laps/pvz2-mappings?gitea_url=https%3A%2F%2Fcodeberg.org&style=for-the-badge&logo=codeberg&logoColor=%234183c4&label=Codeberg&labelColor=%2334373d&color=%234183c4)
+](https://codeberg.org/sad-laps/pvz2-mappings)
+&nbsp;
+[![GitHub Repo](https://img.shields.io/github/stars/sad-laps/pvz2-mappings?style=for-the-badge&logo=github&label=Github&labelColor=%2334373d&color=%234183c4)
+](https://github.com/sad-laps/pvz2-mappings)
 </div>
 
 ## Installation
@@ -18,3 +26,10 @@ Scripts for Ghidra to make reverse engineering the Plants vs Zombies 2 easier.
 ![Ghidra Script Directory](docs/script_dir.png)
 
 ## Features
+
+- Writing and applying of custom mappings (MapWriter & Mapper)
+
+
+## Contributing
+
+If you want to contribute with mappings or script improvements, please open a new PR. I am grateful of any helpful contribution towards this project's goals.

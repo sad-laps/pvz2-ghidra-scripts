@@ -203,6 +203,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   }
   
   // TODO: Fix thunks not using namespace and t_FunctionName (might actually not even map them lol)
+  // TODO: check for `this` parameter and make the function best a __thiscall function!
   public static FunctionDefinitionDataType mapFunction(String className, MappingAST.FuncDef def, CategoryPath catPath) {
     if (def == null || def.offset == null || def.offset.equals(MappingUtil.WILDCARD)) return null;
 

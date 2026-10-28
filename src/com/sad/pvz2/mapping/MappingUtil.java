@@ -53,6 +53,7 @@ public class MappingUtil {
   public static String fromProcessor(Processor proc) {
     return switch (proc.toString()) {
       case "AARCH64" -> "aarch64";
+      case "ARM" -> "aarch32";
       default -> "";
     };
   }

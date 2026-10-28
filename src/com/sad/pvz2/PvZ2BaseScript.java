@@ -1,4 +1,5 @@
 package com.sad.pvz2;
+
 import static com.sad.pvz2.ScriptLogger.*;
 
 import java.io.File;
@@ -17,12 +18,11 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   public String SCRIPT_VERSION;
   public String GAME_VERSION;
 
-  public static final int PTR_SIZE = 8;
+  public static int PTR_SIZE;
+  public static PointerDataType UNDEFINED_POINTER_TYPE; // undefined *
 
   public static final String PVZ2_CATEGORY_PATH = "/_PvZ2Classes";
   public static final CategoryPath PVZ2_CATEGORY = new CategoryPath(PVZ2_CATEGORY_PATH);
-
-  public static PointerDataType UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT, PTR_SIZE); // undefined *
 
   protected static DecompInterface decomp = new DecompInterface();
 
@@ -37,6 +37,9 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   protected static File scriptDir;
 
   protected void init(String version, String gameVersion, String logFileName) {
+    PTR_SIZE = currentProgram.getDefaultPointerSize();
+    UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT, PTR_SIZE);
+
     // TODO: Will have to change this on release to allow user to choose log file name and path!
     File scriptFile = sourceFile.getFile(false);
     scriptDir = scriptFile != null ? scriptFile.getParentFile() : new File(".");

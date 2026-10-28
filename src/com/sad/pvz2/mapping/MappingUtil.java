@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import ghidra.program.model.lang.Processor;
@@ -125,7 +126,7 @@ public class MappingUtil {
             String name = tokens[tokens.length - 1];
             String returnType = joinTokens(tokens, 2, tokens.length - 1);
             currentFunc = new MappingAST.FuncDef(
-              tokens[1], returnType, name, new ArrayList<>(), new ArrayList<>()
+              tokens[1], returnType, name, new ArrayList<>(), new HashMap<>()
             );
             if (keyword.equals("SFUNC")) {
               funcs.add(currentFunc);
@@ -140,7 +141,7 @@ public class MappingUtil {
             String name = tokens[tokens.length - 1];
             String returnType = joinTokens(tokens, 3, tokens.length - 1);
             currentFunc = new MappingAST.FuncDef(
-              tokens[2], returnType, name, new ArrayList<>(), new ArrayList<>()
+              tokens[2], returnType, name, new ArrayList<>(), new HashMap<>()
             );
             currentVTable.funcs.add(new MappingAST.VFuncDef(Integer.parseInt(tokens[1]), currentFunc));
           }
@@ -156,7 +157,7 @@ public class MappingUtil {
             if (currentFunc == null) continue;
             String newName = tokens[tokens.length - 1];
             String type = joinTokens(tokens, 2, tokens.length - 1);
-            currentFunc.locals.add(new MappingAST.LocalDef(tokens[1], type, newName));
+            currentFunc.locals.put(tokens[1], new MappingAST.LocalDef(tokens[1], type, newName));
           }
         }
       }

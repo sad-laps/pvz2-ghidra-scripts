@@ -1,7 +1,9 @@
 package com.sad.pvz2.mapping;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MappingAST {
   public record MappingFile(
@@ -120,14 +122,14 @@ public class MappingAST {
     public String offset, returnType;
     public Wildcardable name;
     public List<ParamDef> params;
-    public List<LocalDef> locals;
+    public Map<String, LocalDef> locals;
 
-    public FuncDef(String offset, String returnType, String name, List<ParamDef> params, List<LocalDef> locals) {
+    public FuncDef(String offset, String returnType, String name, List<ParamDef> params, Map<String, LocalDef> locals) {
       this.offset = offset;
       this.returnType = returnType;
       this.name = new Wildcardable(name);
       this.params = params != null ? params : new ArrayList<>();
-      this.locals = locals != null ? locals : new ArrayList<>();
+      this.locals = locals != null ? locals : new HashMap<>();
     }
 
     public static FuncDef getOrSet(List<FuncDef> list, String offset, String returnType, String name) {
@@ -157,15 +159,28 @@ public class MappingAST {
     }
 
     public LocalDef getOrSetLocal(String oldName, String type, String newName) {
-      for (LocalDef l : locals) {
-        if (l.newName.equalsIgnoreCase(newName)) {
+      for (LocalDef l : locals.values()) {
+        if (l.newName != null && l.newName.equalsIgnoreCase(newName)) {
+          if (oldName != null && !oldName.equals(MappingUtil.WILDCARD)) {
+            locals.remove(l.oldName);
+            l.oldName = oldName;
+          }
           l.type = type;
           l.newName = newName;
+          locals.put(l.oldName, l);
           return l;
         }
       }
+
+      LocalDef l = locals.get(oldName);
+      if (l != null && (l.newName.equals(newName))) {
+        l.type = type;
+        l.newName = newName;
+        return l;
+      }
+
       LocalDef newLocal = new LocalDef(oldName, type, newName);
-      locals.add(newLocal);
+      locals.put(oldName, newLocal);
       return newLocal;
     }
 
@@ -174,7 +189,7 @@ public class MappingAST {
 
       sb.append(" ".repeat(layer) + prefix + "FUNC " + offset + " " + returnType + " " + name + "\n");
       for (var param : params) sb.append(" ".repeat(layer + 2) + param);
-      for (var local : locals) sb.append(" ".repeat(layer + 2) + local);
+      for (var local : locals.values()) sb.append(" ".repeat(layer + 2) + local);
 
       return sb.toString();
     }
@@ -244,7 +259,7 @@ public class MappingAST {
       this.funcs = funcs != null ? funcs : new ArrayList<>();
     }
 
-    public VFuncDef getOrSetVFunc(int index, String offset, String returnType, String name, List<ParamDef> params, List<LocalDef> locals) {
+    public VFuncDef getOrSetVFunc(int index, String offset, String returnType, String name, List<ParamDef> params, Map<String, LocalDef> locals) {
       for (VFuncDef vf : funcs) {
         if (vf.index == index) {
           vf.funcDef.offset = offset;
@@ -298,7 +313,7 @@ public class MappingAST {
 
       sb.append(" ".repeat(layer) + "VFUNC " + index + " " + funcDef.offset + " " + funcDef.returnType + " " + funcDef.name + "\n");
       for (var param : funcDef.params) sb.append(" ".repeat(layer + 2) + param);
-      for (var local : funcDef.locals) sb.append(" ".repeat(layer + 2) + local);
+      for (var local : funcDef.locals.values()) sb.append(" ".repeat(layer + 2) + local);
 
       return sb.toString();
     }

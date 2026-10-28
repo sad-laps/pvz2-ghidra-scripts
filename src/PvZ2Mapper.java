@@ -10,6 +10,7 @@ import static com.sad.pvz2.ScriptLogger.*;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import com.sad.pvz2.PvZ2BaseScript;
@@ -36,6 +37,7 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.HighFunctionDBUtil;
+import ghidra.program.model.pcode.HighSymbol;
 import ghidra.program.model.symbol.SourceType;
 
 public class PvZ2Mapper extends PvZ2BaseScript {
@@ -233,6 +235,33 @@ public class PvZ2Mapper extends PvZ2BaseScript {
         if (highFunc != null) {
           HighFunctionDBUtil.commitParamsToDatabase(highFunc, true, HighFunctionDBUtil.ReturnCommitOption.COMMIT, SourceType.USER_DEFINED);
         }
+
+        Iterator<HighSymbol> symbols = highFunc.getLocalSymbolMap().getSymbols();
+        while (symbols.hasNext()) {
+          HighSymbol symbol = symbols.next();
+          if (symbol == null || symbol.isParameter()) continue;
+
+          String currentName = symbol.getName();
+          log(" Mapped Parameter: " );
+
+          MappingAST.LocalDef localDef = def.locals.get(currentName);
+          if (localDef == null) continue;
+
+          DataType lType = resolveDataType(localDef.type);
+          if (lType == null) lType = symbol.getDataType();
+
+          String newName = (localDef.newName != null && !localDef.newName.equals(MappingUtil.WILDCARD)) 
+              ? localDef.newName 
+              : currentName;
+
+          try {
+            HighFunctionDBUtil.updateDBVariable(symbol, newName, lType, SourceType.USER_DEFINED);
+            log(" Mapped Local Variable: " + currentName + " -> " + newName);
+          }
+          catch (Exception e) {
+            error("Failed to update local variable " + currentName, e);
+          }
+        }
       }
 
       Parameter[] existingParams = func.getParameters();
@@ -247,6 +276,14 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
           String pName = (paramDef.name != null && !paramDef.name.equals(MappingUtil.WILDCARD)) 
             ? paramDef.name : "param_" + paramDef.index;
+
+          // Set __thiscall as calling convention to automatically apply `this` as first param
+          // if (paramDef.index == 0 && (pName.equals("self") || pName.equals("this"))) {
+          //   paramDefList.remove(0);
+          //   fnDef.setCallingConvention("__thiscall");
+          //   log(" * Changed calling convention -> __thiscall");
+          //   continue;
+          // }
 
           ParameterDefinition newParamDef = new ParameterDefinitionImpl(pName, pType, null);
 
@@ -278,7 +315,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       return fnDef;
     }
     catch (Exception e) {
-      error("Failed to map function " + def.name + " at 0x" + def.offset + ": ", e);
+      error("Failed to map function " + def.name + " at 0x" + addr + ": ", e);
     }
     return null;
   }
@@ -298,7 +335,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       if (dataType != null) changeDataType(addr, dataType);
       if (def.name != null && !def.name.isEmpty()) setLabel(addr, className, def.name);
 
-      log("Mapped Variable: " + className + "::" + def.name + " at " + def.offset);
+      log("Mapped Variable: " + className + "::" + def.name + " at " + addr);
     }
     catch (Exception e) {
       error("Failed to map variable " + def.name + " at 0x" + addr + ": ", e);

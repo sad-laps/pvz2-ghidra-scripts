@@ -23,20 +23,7 @@ import com.sad.pvz2.util.StructUtil;
 import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.data.ArrayDataType;
-import ghidra.program.model.data.CategoryPath;
-import ghidra.program.model.data.CharDataType;
-import ghidra.program.model.data.DataType;
-import ghidra.program.model.data.DataTypeComponent;
-import ghidra.program.model.data.FunctionDefinitionDataType;
-import ghidra.program.model.data.LongLongDataType;
-import ghidra.program.model.data.ParameterDefinition;
-import ghidra.program.model.data.ParameterDefinitionImpl;
-import ghidra.program.model.data.PointerDataType;
-import ghidra.program.model.data.PointerTypedef;
-import ghidra.program.model.data.Structure;
-import ghidra.program.model.data.StructureDataType;
-import ghidra.program.model.data.UnsignedIntegerDataType;
+import ghidra.program.model.data.*;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.pcode.HighFunction;
@@ -44,6 +31,7 @@ import ghidra.program.model.pcode.HighFunctionDBUtil;
 import ghidra.program.model.pcode.HighSymbol;
 import ghidra.program.model.symbol.SourceType;
 
+// TODO: make logs only log when they change something so it doesn't spam the logs
 public class PvZ2Mapper extends PvZ2BaseScript {
   // Itanium C++ ABI Data Types
   public static StructureDataType typeInfo;
@@ -138,47 +126,46 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   public static void mapClass(MappingAST.ClassDef def) {
     String fullName = def.name;
 
-    boolean isNamespaceOnly = def.size.toString().equals(MappingUtil.WILDCARD);
-
+    
     String pathStr = PVZ2_CATEGORY_PATH + "/" + fullName.replace("::", "/");
     CategoryPath catPath = new CategoryPath(pathStr);
-
-    if (isNamespaceOnly) {
-      // If size is <> treat it as a namespace / empty category container
+    
+    if (!dtm.containsCategory(catPath)) {
       dtm.createCategory(catPath);
       log("Created Namespace Category: " + catPath);
     }
-    else {
-      try {
-        dtm.createCategory(catPath);
-        log("Created Namespace Category: " + catPath);
-        String shortName = getShortName(fullName);
 
-        // Map the VTable first as it could be used by the fields
-        if (def.vtable != null) mapVTable(fullName, catPath, def.vtable);
+    if (def.size.toString().equals(MappingUtil.WILDCARD)) return;
+    // If size is not <> treat it as a class
+    try {
+      String shortName = getShortName(fullName);
 
-        // Map the class related functions
-        if (def.funcs != null) {
-          for (MappingAST.FuncDef funcDef : def.funcs) mapFunction(fullName, funcDef);
-        }
+      // Map the VTable first as it could be used by the fields
+      if (def.vtable != null) mapVTable(fullName, catPath, def.vtable);
 
-        if (def.vars != null)
-          for (MappingAST.VarDef varDef : def.vars) mapVariable(fullName, varDef);
+      // Map the class related functions
+      if (def.funcs != null)
+        for (MappingAST.FuncDef funcDef : def.funcs) mapFunction(fullName, funcDef);
 
-        // Map the Class fields
+      if (def.vars != null)
+        for (MappingAST.VarDef varDef : def.vars) mapVariable(fullName, varDef);
+
+      // Map the Class fields
+      if (def.fields != null) {
         StructUtil.getOrCreateStructure(dtm, catPath, shortName, b -> {
           for (MappingAST.FieldDef field : def.fields) {
             int offset = Integer.decode(field.startOffset);
             DataType dataType = resolveDataType(field.type);
-            b.insertAtOffset(offset, dataType, dataType.getLength(), field.name, "");
+            b.insertAtOffset(offset, dataType, dataType.getLength(), field.name.value(""), "");
+            log(" Added field " + field.name.value("field_" + field.startOffset) + " at offset " + field.startOffset);
           }
         });
+      }
 
-        log("Created Structure Class: " + fullName + " [Size: " + def.size + "]");
-      }
-      catch (Exception e) {
-        error("Failed to create structure for " + fullName + ": ", e);
-      }
+      log("Created Structure Class: " + fullName + " [Size: " + def.size + "]");
+    }
+    catch (Exception e) {
+      error("Failed to create structure for " + fullName + ": ", e);
     }
   }
 

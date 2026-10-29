@@ -85,10 +85,22 @@ public abstract class PvZ2BaseScript extends GhidraScript {
   }
   
   public static void setLabel(Address addr, String namespaceStr, String labelName) {
-    log(" * Added label: " + namespaceStr + "::" + labelName);
     try {
       Namespace nspc = getOrCreateNamespace(namespaceStr);
-      symTab.createLabel(addr, labelName, nspc, SourceType.USER_DEFINED);
+
+      boolean exists = false;
+      for (Symbol sym : symTab.getSymbols(addr)) {
+        if (sym.getName().equals(labelName) && (nspc == null || sym.getParentNamespace().equals(nspc))) {
+          exists = true;
+          break;
+        }
+      }
+      
+      if (!exists) {
+        symTab.createLabel(addr, labelName, nspc, SourceType.USER_DEFINED);
+        String fullNs = (namespaceStr != null && !namespaceStr.isEmpty()) ? namespaceStr + "::" : "";
+        log(" * Added label: " + fullNs + labelName + " at " + addr);
+      }
     }
     catch (InvalidInputException e) {
       error("Could not create label '" + namespaceStr + "::" + labelName + "' at 0x" + addr, e);

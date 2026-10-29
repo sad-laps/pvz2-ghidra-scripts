@@ -324,12 +324,13 @@ public class MappingAST {
     }
   }
   public static class FieldDef {
-    public String startOffset, type, name;
+    public String startOffset, type;
+    public Wildcardable name;
 
     public FieldDef(String startOffset, String type, String name) {
       this.startOffset = startOffset;
       this.type = type;
-      this.name = name;
+      this.name = new Wildcardable(name);
     }
 
     public String toString(int layer) {
@@ -395,6 +396,10 @@ public class MappingAST {
       if (force || (isOldWildcard && isNewValid)) {
         this.value = (newVal != null) ? newVal : MappingUtil.WILDCARD;
       }
+    }
+
+    public String value(String name) {
+      return value.equals(MappingUtil.WILDCARD) ? name : value;
     }
 
     @Override

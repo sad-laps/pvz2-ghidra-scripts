@@ -135,6 +135,13 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
     int index = 0;
 
     for (DataTypeComponent comp : struct.getComponents()) {
+      // Skip writing vtable functions that were inherited from a parent structure
+      String comment = comp.getComment();
+      if (comment != null && comment.contains("Inherited from parent")) {
+        index++;
+        continue;
+      }
+
       long compOffset = comp.getOffset();
       String vfuncName = comp.getFieldName();
       if (vfuncName == null || vfuncName.isEmpty()) vfuncName = "vfunc_" + index;

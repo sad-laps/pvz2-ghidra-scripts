@@ -61,9 +61,9 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
     MAPPING_DIR = new File(scriptDir.getParentFile(), "mappings");
     MAPPINGS = MappingUtil.load(MAPPING_DIR, currentProgram.getLanguage().getProcessor(), GAME_VERSION);
-    divider();
-    log(MAPPINGS.serialize());
-    divider();
+    // divider();
+    // log(MAPPINGS.serialize());
+    // divider();
     map();
   }
 
@@ -237,6 +237,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
         Iterator<HighSymbol> symbols = highFunc.getLocalSymbolMap().getSymbols();
         while (symbols.hasNext()) {
           HighSymbol symbol = symbols.next();
+          // log(symbol.getName());
           if (symbol == null || symbol.isParameter()) continue;
           
           String currentName = symbol.getName();
@@ -292,7 +293,8 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       fnDef.setArguments(paramDefs);
 
       // Save Function Description in Category
-      if (catPath != null) 
+      // TODO: Maybe if the name changed also change the Function Definition name, since there might be one with older name!
+      if (catPath != null)
         fnDef.setCategoryPath(catPath);
       else if (className != null)
         fnDef.setCategoryPath(getCategoryPath(className));

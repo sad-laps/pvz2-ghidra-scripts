@@ -380,6 +380,10 @@ public class MappingAST {
       this.value = (value != null) ? value : MappingUtil.WILDCARD;
     }
 
+    public String value() {
+      return value;
+    }
+
     public void update(String newVal) {
       update(newVal, false);
     }

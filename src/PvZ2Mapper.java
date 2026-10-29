@@ -10,8 +10,10 @@ import static com.sad.pvz2.ScriptLogger.*;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import com.sad.pvz2.PvZ2BaseScript;
 import com.sad.pvz2.mapping.MappingAST;
@@ -25,12 +27,14 @@ import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.CharDataType;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.FunctionDefinitionDataType;
 import ghidra.program.model.data.LongLongDataType;
 import ghidra.program.model.data.ParameterDefinition;
 import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.PointerTypedef;
+import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.UnsignedIntegerDataType;
 import ghidra.program.model.listing.Function;
@@ -178,26 +182,59 @@ public class PvZ2Mapper extends PvZ2BaseScript {
     }
   }
 
-  public static void mapVTable(String className, CategoryPath catPath, MappingAST.VTableDef vtableDef) {
-    String vtName = vtableDef.name;
+  public static void mapVTable(String className, CategoryPath catPath, MappingAST.VTableDef def) {
+    String vtName = def.name;
+    int totalSlots = Integer.decode(def.size.value()) / PTR_SIZE;
+
+    Structure tempParentVt = null;
+    if (def.superVTable != null && !def.superVTable.value().isEmpty()) {
+      String parentRef = def.superVTable.value().replace("::", "/");
+      int lastSlash = parentRef.lastIndexOf('/');
+      String sVtName = ((lastSlash != -1) ? parentRef.substring(lastSlash + 1) : parentRef) + "VTable";
+      DataType dt = dtm.getDataType(getCategoryPath(parentRef), sVtName);
+      if (dt instanceof Structure pdt) tempParentVt = pdt;
+    }
+    final Structure parentVtStruct = tempParentVt;
 
     try {
-      StructureDataType vtStruct = StructUtil.getOrCreateStructure(dtm, catPath, vtName, b -> {
-        for (MappingAST.VFuncDef vfunc : vtableDef.funcs) {
-          int offset = vfunc.index * PTR_SIZE;
-          String fnName = vfunc.funcDef.name.toString();
+      Map<Integer, MappingAST.VFuncDef> definedFuncs = new HashMap<>();
+      for (MappingAST.VFuncDef vf : def.funcs) {
+        definedFuncs.put(vf.index, vf);
+      }
 
-          FunctionDefinitionDataType fnDef = mapFunction(className, vfunc.funcDef, catPath);
-          DataType slotType = (fnDef != null) ? new PointerDataType(fnDef, PTR_SIZE) : UNDEFINED_POINTER_TYPE;
-          b.insertAtOffset(offset, slotType, PTR_SIZE, fnName, "");
+      StructureDataType vtStruct = StructUtil.getOrCreateStructure(dtm, catPath, vtName, b -> {
+        for (int i = 0; i < totalSlots; i++) {
+          int offset = i * PTR_SIZE;
+          MappingAST.VFuncDef vfunc = definedFuncs.get(i);
+
+          if (vfunc != null) {
+            String fnName = vfunc.funcDef.name.toString();
+            FunctionDefinitionDataType fnDef = mapFunction(className, vfunc.funcDef, catPath);
+            DataType slotType = (fnDef != null) ? new PointerDataType(fnDef, PTR_SIZE) : UNDEFINED_POINTER_TYPE;
+            b.insertAtOffset(offset, slotType, PTR_SIZE, fnName, "");
+          }
+          else if (parentVtStruct != null) {
+            DataTypeComponent parentComp = parentVtStruct.getComponentAt(offset);
+            if (parentComp != null) {
+              DataType parentSlotType = parentComp.getDataType();
+              String parentFnName = parentComp.getFieldName();
+              
+              b.insertAtOffset(offset, parentSlotType, PTR_SIZE, parentFnName, "Inherited from parent");
+              log(" Inherited vtable slot " + parentFnName + " from parent structure.");
+            }
+            else {
+              b.insertAtOffset(offset, UNDEFINED_POINTER_TYPE, PTR_SIZE, "slot_" + i, "");
+            }
+          }
+
         }
       });
 
-      Address vtAddr = getAddrFromRva(vtableDef.offset);
+      Address vtAddr = getAddrFromRva(def.offset);
       changeDataType(vtAddr, vtStruct);
       setLabel(vtAddr, className, vtName);
 
-      log("Created VTable Structure: " + vtName + " [Size: " + vtableDef.size.toString() + ", Slots: " + vtableDef.funcs.size() + "]");
+      log("Created VTable Structure: " + vtName + " [Size: " + def.size.toString() + ", Slots: " + def.funcs.size() + "]");
     }
     catch (Exception e) {
       error("Failed to create VTable structure " + vtName + ": ", e);
@@ -205,7 +242,6 @@ public class PvZ2Mapper extends PvZ2BaseScript {
   }
   
   // TODO: Fix thunks not using namespace and t_FunctionName (might actually not even map them lol)
-  // TODO: check for `this` parameter and make the function best a __thiscall function!
   public static FunctionDefinitionDataType mapFunction(String className, MappingAST.FuncDef def, CategoryPath catPath) {
     if (def == null || def.offset == null || def.offset.equals(MappingUtil.WILDCARD)) return null;
 
@@ -234,6 +270,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
           HighFunctionDBUtil.commitParamsToDatabase(highFunc, true, HighFunctionDBUtil.ReturnCommitOption.COMMIT, SourceType.USER_DEFINED);
         }
 
+        // TODO: Use the newName for checking and setting types aswell !
         Iterator<HighSymbol> symbols = highFunc.getLocalSymbolMap().getSymbols();
         while (symbols.hasNext()) {
           HighSymbol symbol = symbols.next();
@@ -275,6 +312,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
           String pName = (paramDef.name != null && !paramDef.name.equals(MappingUtil.WILDCARD)) 
             ? paramDef.name : "param_" + paramDef.index;
 
+          // TODO: FIX THIS
           // Set __thiscall as calling convention to automatically apply `this` as first param
           // if (paramDef.index == 0 && (pName.equals("self") || pName.equals("this"))) {
           //   paramDefList.remove(0);
@@ -293,7 +331,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
       fnDef.setArguments(paramDefs);
 
       // Save Function Description in Category
-      // TODO: Maybe if the name changed also change the Function Definition name, since there might be one with older name!
+      // TODO: Maybe if the name changed also change the Function Definition name in category, since there might be one with older name!
       if (catPath != null)
         fnDef.setCategoryPath(catPath);
       else if (className != null)

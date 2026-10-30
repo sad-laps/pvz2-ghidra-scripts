@@ -205,7 +205,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
             if (parentComp != null) {
               DataType parentSlotType = parentComp.getDataType();
               String parentFnName = parentComp.getFieldName();
-              
+
               b.insertAtOffset(offset, parentSlotType, PTR_SIZE, parentFnName, "Inherited from parent");
               log(" Inherited vtable slot " + parentFnName + " from parent structure.");
             }
@@ -213,7 +213,6 @@ public class PvZ2Mapper extends PvZ2BaseScript {
               b.insertAtOffset(offset, UNDEFINED_POINTER_TYPE, PTR_SIZE, "slot_" + i, "");
             }
           }
-
         }
       });
 

@@ -331,4 +331,13 @@ public class PvZ2Analyzer extends PvZ2BaseScript {
     });
     return vmiStruct;
   }
+
+  public static HighFunction getHighFunction(Function func, int timeout) {
+    try {
+      return decomp.decompileFunction(func, timeout, null).getHighFunction();
+    } catch (Exception e) {
+      error("Could not find High Function for " + func.getName(), e);
+      return null;
+    }
+  }
 }

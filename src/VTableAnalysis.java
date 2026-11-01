@@ -180,7 +180,9 @@ public class VTableAnalysis extends PvZ2BaseScript {
         if (sym == null || sym.getSymbolType() != SymbolType.LABEL) continue;
 
         setLabelAt(toAddr, className, "instance");
+        break;
       }
+      break;
     }
   }
 

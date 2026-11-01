@@ -34,7 +34,7 @@ public class PvZ2Analyzer extends PvZ2BaseScript {
 
   @Override
   protected void run() {
-    init("26.0.0", "13.5.1", "pvz2mapping_output.log");
+    init("26.0.0", "13.5.1", "pvz2mapping_output.log", false);
     logHeader("PvZ2 Analyzer", SCRIPT_VERSION, GAME_VERSION);
 
     // Create the Itanium C++ ABI structures beforehand

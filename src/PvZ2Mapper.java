@@ -45,7 +45,7 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
   @Override
   protected void run() {
-    init("26.0.0", "1.4.244592", "pvz2mapper_output.log");
+    init("26.0.0", "1.4.244592", "pvz2mapper_output.log", false);
     logHeader("PvZ2 Map-Writer", SCRIPT_VERSION, GAME_VERSION);
 
     // Create the Itanium C++ ABI structures beforehand

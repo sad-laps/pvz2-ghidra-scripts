@@ -19,6 +19,8 @@ public class ScriptLogger {
   }
 
   public static void logHeader(String scriptName, String version, String gameVersion) {
+    if (!PvZ2BaseScript.LOG) return;
+
     String scriptLine = scriptName + " Log v" + version;
     String gameLine = "Game Version: " + gameVersion;
     String timestamp = "Timestamp: " + DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now());
@@ -44,6 +46,8 @@ public class ScriptLogger {
   }
 
   public static void log(String message, boolean inConsole) {
+    if (!PvZ2BaseScript.LOG) return;
+
     if (inConsole) SCRIPT.println(message);
     writeLogFile(message + System.lineSeparator());
   }
@@ -63,6 +67,8 @@ public class ScriptLogger {
   }
 
   public static void writeLogFile(String message) {
+    if (!PvZ2BaseScript.LOG) return;
+
     try {
       if (LOG_FILE_PATH.getParent() != null) {
         Files.createDirectories(LOG_FILE_PATH.getParent());

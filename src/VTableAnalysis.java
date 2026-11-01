@@ -35,7 +35,7 @@ public class VTableAnalysis extends PvZ2BaseScript {
 
   @Override
   protected void run() {
-    init("26.0.0", "1.4.244592", "vtable_analysis.log");
+    init("26.0.0", "1.4.244592", "vtable_analysis.log", false);
     logHeader("PvZ2 VTable Analyzer", SCRIPT_VERSION, GAME_VERSION);
     instance = this;
     ProgramSelection selection = currentSelection;

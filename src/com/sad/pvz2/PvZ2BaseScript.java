@@ -36,7 +36,9 @@ public abstract class PvZ2BaseScript extends GhidraScript {
 
   protected static File scriptDir;
 
-  protected void init(String version, String gameVersion, String logFileName) {
+  protected static boolean LOG = false;
+
+  protected void init(String version, String gameVersion, String logFileName, boolean showLogs) {
     PTR_SIZE = currentProgram.getDefaultPointerSize();
     UNDEFINED_POINTER_TYPE = new PointerDataType(DataType.DEFAULT, PTR_SIZE);
 
@@ -46,6 +48,7 @@ public abstract class PvZ2BaseScript extends GhidraScript {
     File logsDir = new File(scriptDir.getParentFile(), "logs");
 
     ScriptLogger.init(this, logsDir.getPath(), logFileName);
+    LOG = showLogs;
 
     SCRIPT_VERSION = version;
     GAME_VERSION = gameVersion;

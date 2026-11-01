@@ -35,7 +35,7 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
 
   @Override
   protected void run() {
-    init("26.0.0", "1.4.244592", "pvz2mapwriter_output.log");
+    init("26.0.0", "1.4.244592", "pvz2mapwriter_output.log", false);
     logHeader("PvZ2 Map-Writer", SCRIPT_VERSION, GAME_VERSION);
     MAPPING_DIR = new File(scriptDir.getParentFile(), "mappings");
     MAPPINGS = MappingUtil.load(MAPPING_DIR, currentProgram.getLanguage().getProcessor(), GAME_VERSION);

@@ -39,17 +39,10 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
     logHeader("PvZ2 Map-Writer", SCRIPT_VERSION, GAME_VERSION);
     MAPPING_DIR = new File(scriptDir.getParentFile(), "mappings");
     MAPPINGS = MappingUtil.load(MAPPING_DIR, currentProgram.getLanguage().getProcessor(), GAME_VERSION);
-    // divider();
-    // log(MAPPINGS.serialize());
-    // divider();
     map();
-    // divider();
-    // log(MAPPINGS.serialize());
-    // divider();
     MappingUtil.save(MAPPING_DIR, currentProgram.getLanguage().getProcessor(), GAME_VERSION, MAPPINGS);
   }
 
-  // TODO: Fix funcs being mapped before the vfuncs. Also maybe don't add already named functions in the vfunc the list as they are inherited most likely...
   public static void map() {
     // Search defined symbols in symbol tree first
     SymbolIterator symbols = symTab.getDefinedSymbols();
@@ -80,9 +73,23 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
       mapSymbol(sym, currentClass);
     }
 
+    List<Symbol> childSymbols = new ArrayList<>();
     SymbolIterator subSymbols = symTab.getChildren(sym);
     while (subSymbols.hasNext()) {
-      Symbol subSym = subSymbols.next();
+      childSymbols.add(subSymbols.next());
+    }
+
+    // Force VTable in front
+    childSymbols.sort((s1, s2) -> {
+      boolean s1IsVTable = s1.getName().endsWith("VTable");
+      boolean s2IsVTable = s2.getName().endsWith("VTable");
+
+      if (s1IsVTable && !s2IsVTable) return -1; // s1 goes first
+      if (!s1IsVTable && s2IsVTable) return 1;  // s2 goes first
+      return 0; // Keep relative order for everything else
+    });
+
+    for (Symbol subSym : childSymbols) {
       mapSymbolsRecursively(subSym, fullName, currentClass);
     }
   }
@@ -95,6 +102,8 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
 
     switch (type.toString()) {
       case "Label" -> {
+        // TODO: Fix this as it's just a workaround for seemingly extern functions
+        if (name.startsWith("__cxa")) return;
         DataType dataType = listing.getDataAt(addr).getDataType();
         String typeName = (dataType != null) ? dataType.getDisplayName() : "undefined8";
 
@@ -126,12 +135,15 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
             targetFuncDef = currentClass.getOrSetFunc(offset, returnType, name);
           }
           populateFuncDef(func, targetFuncDef);
+          log(" Mapped function " + name + " at " + offset);
         }
       }
       default -> log("Unhandled symbol type: " + type + " for " + name);
     }
   }
   
+  // TODO: maybe don't add already named functions in the vfunc list as they are inherited most likely... will have to find a way for not mapping inherited funcs!
+  // TODO:2 MAYYYYYYYYbe when mapping the first vtable func to check for inherited vfunc, can be done by checking the assigned `super` or smth (sometimes it's also in registerClass from the vfunc)
   public static void mapVTable(Address addr, MappingAST.VTableDef def, Structure struct) {
     int index = 0;
 
@@ -197,9 +209,12 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
 
       if (dt instanceof Structure struct) {
         for (DataTypeComponent comp : struct.getComponents()) {
+          String fieldName = comp.getFieldName();
+          // Skip empty names best for now
+          if (fieldName.isEmpty()) continue;
+
           String offset = "0x" + Long.toHexString(comp.getOffset());
           String type = comp.getDataType().getDisplayName();
-          String fieldName = comp.getFieldName();
 
           if (fieldName == null || fieldName.isEmpty()) fieldName = "field_" + offset;
 

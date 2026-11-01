@@ -236,8 +236,11 @@ public class PvZ2Mapper extends PvZ2BaseScript {
 
     try {
       Function func = program.getFunctionManager().getFunctionAt(addr);
-
       if (func == null) return null;
+
+      // TODO: Implement this better, same for MapWriter!
+      if(func.getName().startsWith("__")) return null;
+
       DataType returnType = resolveDataType(def.returnType);
       if (returnType == UNDEFINED_POINTER_TYPE) returnType = func.getReturnType();
 

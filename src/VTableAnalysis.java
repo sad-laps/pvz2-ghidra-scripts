@@ -120,14 +120,15 @@ public class VTableAnalysis extends PvZ2BaseScript {
       
       funcName = "SGetType";
     }
-    
-    setFuncName(targetFunc, CLASS_NAME, funcName);
+
     makeInstanceAddr(targetFunc, CLASS_NAME);
     makeNewFunction(targetFunc, CLASS_NAME);
-    
+
+    setFuncName(targetFunc, CLASS_NAME, funcName);
     setFuncName(func, CLASS_NAME, "GetType");
   }
 
+  // TODO: Fix new function not created if it's a LAB
   public static void makeNewFunction(Function func, String className) {
     InstructionIterator instrs = listing.getInstructions(func.getBody(), false);
     int funcCount = 0;
@@ -180,9 +181,8 @@ public class VTableAnalysis extends PvZ2BaseScript {
         if (sym == null || sym.getSymbolType() != SymbolType.LABEL) continue;
 
         setLabelAt(toAddr, className, "instance");
-        break;
+        return;
       }
-      break;
     }
   }
 

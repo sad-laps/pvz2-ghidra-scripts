@@ -49,6 +49,7 @@ public class PvZ2MapWriter extends PvZ2BaseScript {
     MappingUtil.save(MAPPING_DIR, currentProgram.getLanguage().getProcessor(), GAME_VERSION, MAPPINGS);
   }
 
+  // TODO: Fix funcs being mapped before the vfuncs. Also maybe don't add already named functions in the vfunc the list as they are inherited most likely...
   public static void map() {
     // Search defined symbols in symbol tree first
     SymbolIterator symbols = symTab.getDefinedSymbols();

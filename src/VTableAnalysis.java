@@ -62,6 +62,7 @@ public class VTableAnalysis extends PvZ2BaseScript {
       }
     });
     changeDataType(selection.getMinAddress(), vtable);
+    setLabelAt(selection.getMinAddress(), CLASS_NAME, CLASS_NAME + "VTable");
 
     // Create Class Struct
     StructUtil.getOrCreateStructure(dtm, categoryPath, CLASS_NAME, b -> {
